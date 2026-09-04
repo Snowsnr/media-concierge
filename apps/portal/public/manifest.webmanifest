@@ -1,0 +1,17 @@
+{
+  "name": "Media Concierge",
+  "short_name": "Concierge",
+  "description": "Solicitudes familiares de películas y series.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#100d1c",
+  "theme_color": "#100d1c",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

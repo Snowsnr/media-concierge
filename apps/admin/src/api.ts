@@ -1,0 +1,60 @@
+import type {
+  DownloadControlAction,
+  CreatedInvitation,
+  HealthCheck,
+  InvitationSummary,
+  MediaRequest,
+  ReleaseCandidate,
+  SubtitleCandidate,
+} from '@media-concierge/shared';
+
+const API_URL = import.meta.env.VITE_CONCIERGE_API_URL ?? 'http://localhost:4100';
+
+async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_URL}${path}`, {
+    ...options,
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { message?: string } | null;
+    throw new Error(body?.message ?? 'La API no respondió.');
+  }
+  return response.json() as Promise<T>;
+}
+
+const post = <T>(path: string, body: unknown = {}) =>
+  request<T>(path, { method: 'POST', body: JSON.stringify(body) });
+
+export const api = {
+  listRequests: () => request<MediaRequest[]>('/api/requests'),
+  getRequest: (id: string) => request<MediaRequest>(`/api/requests/${id}`),
+  decide: (id: string, action: 'approve' | 'reject' | 'clarify', note = '') =>
+    post<MediaRequest>(`/api/requests/${id}/decision`, { action, note }),
+  releases: (id: string) => request<ReleaseCandidate[]>(`/api/requests/${id}/releases`),
+  selectRelease: (id: string, candidateId: string) =>
+    post<MediaRequest>(`/api/requests/${id}/releases/select`, { candidateId }),
+  advance: (id: string) => post<MediaRequest>(`/api/requests/${id}/advance`),
+  subtitles: (id: string) => request<SubtitleCandidate[]>(`/api/requests/${id}/subtitles`),
+  selectSubtitle: (id: string, candidateId: string, episodeId?: string) =>
+    post<MediaRequest>(`/api/requests/${id}/subtitles/select`, { candidateId, episodeId }),
+  verify: (id: string) => post<MediaRequest>(`/api/requests/${id}/verify`),
+  setScenario: (id: string, scenario: MediaRequest['mockScenario']) =>
+    post<MediaRequest>(`/api/requests/${id}/scenario`, { scenario }),
+  controlDownload: (
+    id: string,
+    action: DownloadControlAction,
+    options: { deleteData?: boolean; blocklist?: boolean } = {},
+  ) => post<MediaRequest>(`/api/requests/${id}/download/control`, { action, ...options }),
+  retryImport: (id: string) => post<MediaRequest>(`/api/requests/${id}/import/retry`),
+  episodeAction: (
+    id: string,
+    episodeId: string,
+    action: 'ready-without-subtitles' | 'retry-subtitles',
+  ) => post<MediaRequest>(`/api/requests/${id}/episodes/${episodeId}`, { action }),
+  health: () => request<HealthCheck[]>('/api/integrations/health'),
+  reset: () => post<MediaRequest[]>('/api/demo/reset'),
+  invitations: () => request<InvitationSummary[]>('/api/invitations'),
+  createInvitation: (label: string, expiresInDays: number) =>
+    post<CreatedInvitation>('/api/invitations', { label, expiresInDays }),
+  revokeInvitation: (id: string) => post<{ revoked: boolean }>(`/api/invitations/${id}/revoke`),
+};

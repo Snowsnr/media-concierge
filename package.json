@@ -1,0 +1,39 @@
+{
+  "name": "media-concierge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Human-in-the-loop media request concierge for a private homelab.",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "apps/*",
+    "services/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,portal,admin -c yellow,magenta,cyan \"npm run dev --workspace @media-concierge/api\" \"npm run dev --workspace @media-concierge/portal\" \"npm run dev --workspace @media-concierge/admin\"",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "vitest run",
+    "test:supabase": "node tests/integration/supabase-local.mjs",
+    "test:e2e": "playwright test",
+    "test:watch": "vitest",
+    "lint": "eslint . --max-warnings=0",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0",
+    "@eslint/js": "^9.20.0",
+    "@types/node": "^22.13.0",
+    "concurrently": "^9.1.2",
+    "eslint": "^9.20.0",
+    "globals": "^15.15.0",
+    "prettier": "^3.5.0",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.24.0",
+    "vitest": "^3.0.5"
+  }
+}
