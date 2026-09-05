@@ -2,8 +2,31 @@ import { createClient } from 'jsr:@supabase/supabase-js@2';
 
 const url = () => Deno.env.get('SUPABASE_URL')!;
 
+const adminKey = () => {
+  const legacyKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  if (legacyKey) return legacyKey;
+
+  const secretKeys = Deno.env.get('SUPABASE_SECRET_KEYS');
+  if (secretKeys) {
+    try {
+      const parsed = JSON.parse(secretKeys) as Record<string, unknown>;
+      const defaultKey = parsed.default;
+      if (typeof defaultKey === 'string' && defaultKey) return defaultKey;
+
+      const firstKey = Object.values(parsed).find(
+        (value): value is string => typeof value === 'string' && value.length > 0,
+      );
+      if (firstKey) return firstKey;
+    } catch {
+      // Fall through to the explicit error below.
+    }
+  }
+
+  throw new Error('Supabase admin key is unavailable in the Edge Function environment.');
+};
+
 export const adminClient = () =>
-  createClient(url(), Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, {
+  createClient(url(), adminKey(), {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
