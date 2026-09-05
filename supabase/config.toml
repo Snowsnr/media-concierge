@@ -16,13 +16,13 @@ additional_redirect_urls = ["http://127.0.0.1:5173"]
 enable_anonymous_sign_ins = true
 
 [functions.redeem-invite]
-verify_jwt = true
+verify_jwt = false
 
 [functions.tmdb-search]
-verify_jwt = true
+verify_jwt = false
 
 [functions.create-request]
-verify_jwt = true
+verify_jwt = false
 
 [functions.invitations]
 verify_jwt = false
