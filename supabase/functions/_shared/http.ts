@@ -3,7 +3,8 @@ export const corsHeaders = (request: Request) => {
   const requestOrigin = request.headers.get('origin');
   return {
     'Access-Control-Allow-Origin': requestOrigin === allowedOrigin ? requestOrigin : allowedOrigin,
-    'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-bridge-token',
+    'Access-Control-Allow-Headers':
+      'authorization, apikey, content-type, x-client-info, x-supabase-api-version, x-bridge-token',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     Vary: 'Origin',
   };
