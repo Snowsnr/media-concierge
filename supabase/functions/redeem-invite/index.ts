@@ -17,12 +17,16 @@ Deno.serve(async (request) => {
   }
 
   const admin = adminClient();
-  const { data: allowed } = await admin.rpc('check_rate_limit', {
+  const { data: allowed, error: rateLimitError } = await admin.rpc('check_rate_limit', {
     p_subject: user.id,
     p_action: 'redeem-invite',
     p_limit: 8,
     p_window_seconds: 900,
   });
+  if (rateLimitError) {
+    console.error('redeem-invite rate limit failed', rateLimitError);
+    return safeError(request, 500, 'No pudimos validar el intento de acceso.');
+  }
   if (!allowed) return safeError(request, 429, 'Demasiados intentos. Intenta más tarde.');
 
   const { data, error } = await admin.rpc('redeem_family_invitation', {
@@ -30,6 +34,16 @@ Deno.serve(async (request) => {
     p_user_id: user.id,
     p_display_name: displayName,
   });
-  if (error) return safeError(request, 400, 'La invitación expiró, fue usada o está revocada.');
+  if (error) {
+    console.error('redeem-invite redemption failed', error);
+    return json(
+      request,
+      {
+        message: 'La invitación expiró, fue usada o está revocada.',
+        code: error.code ?? 'REDEMPTION_FAILED',
+      },
+      400,
+    );
+  }
   return json(request, { profile: data });
 });
