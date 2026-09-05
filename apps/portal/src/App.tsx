@@ -410,17 +410,40 @@ function RequestsPage({ name }: { name: string }) {
 function RequestDetail({ name }: { name: string }) {
   const { id } = useParams();
   const [item, setItem] = useState<FamilyRequest | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   useEffect(() => {
     if (!id) return;
-    const refresh = () => api.getRequest(id, name).then(setItem);
+    const refresh = () =>
+      api
+        .getRequest(id, name)
+        .then((request) => {
+          setItem(request);
+          setError('');
+        })
+        .catch((reason: Error) => setError(reason.message))
+        .finally(() => setLoading(false));
     void refresh();
     const timer = window.setInterval(() => void refresh(), 15_000);
     return () => window.clearInterval(timer);
   }, [id, name]);
-  if (!item)
+  if (loading)
     return (
       <div className="page">
         <p>Cargando pedido…</p>
+      </div>
+    );
+  if (error || !item)
+    return (
+      <div className="page">
+        <Link className="back-link" to="/solicitudes">
+          ← Mis pedidos
+        </Link>
+        <EmptyState
+          icon="!"
+          title="No pudimos cargar el pedido"
+          copy={error || 'La solicitud no está disponible.'}
+        />
       </div>
     );
   return (

@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(18);
+select plan(19);
 
 select ok(
   (
@@ -49,6 +49,10 @@ select ok(
     'EXECUTE'
   ),
   'rate-limit RPC is service-role only'
+);
+select ok(
+  has_table_privilege('authenticated', 'public.public_request_history', 'SELECT'),
+  'family sessions can read request history through RLS'
 );
 
 insert into auth.users (id, aud, role)
