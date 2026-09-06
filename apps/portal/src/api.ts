@@ -64,6 +64,20 @@ const functionErrorMessage = async (error: unknown, fallback: string) => {
   return fallback;
 };
 
+const withTimeout = async <T>(task: Promise<T>, timeoutMs: number, message: string): Promise<T> => {
+  let timeoutId: number | undefined;
+  try {
+    return await Promise.race([
+      task,
+      new Promise<never>((_, reject) => {
+        timeoutId = window.setTimeout(() => reject(new Error(message)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+  }
+};
+
 async function localRequest<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
     ...options,
@@ -218,6 +232,27 @@ export const api = {
     });
     if (error) throw new Error('No pudimos buscar en TMDB. Intenta nuevamente.');
     return data ?? [];
+  },
+  getMedia: async (tmdbId: number, mediaType: MediaMetadata['type']) => {
+    if (!supabase) {
+      const items = await api.search('');
+      const item = items.find(
+        (candidate) => candidate.tmdbId === tmdbId && candidate.type === mediaType,
+      );
+      if (!item) throw new Error('No encontramos ese título.');
+      return item;
+    }
+    const { data, error } = await withTimeout(
+      supabase.functions.invoke<MediaMetadata>('tmdb-search', {
+        body: { tmdbId, mediaType },
+      }),
+      10_000,
+      'El detalle tardó demasiado. Intenta nuevamente.',
+    );
+    if (error || !data) {
+      throw new Error(await functionErrorMessage(error, 'No pudimos cargar el detalle de TMDB.'));
+    }
+    return data;
   },
   listRequests: async (requesterName: string) => {
     if (supabase) return remoteRows(undefined, requesterName);

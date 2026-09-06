@@ -25,7 +25,7 @@ function Shell({ name, onExit }: { name: string; onExit: () => Promise<void> }) 
       <main>
         <Routes>
           <Route path="/buscar" element={<SearchPage name={name} />} />
-          <Route path="/titulo/:tmdbId" element={<MediaDetail name={name} />} />
+          <Route path="/titulo/:mediaType/:tmdbId" element={<MediaDetail name={name} />} />
           <Route path="/solicitudes" element={<RequestsPage name={name} />} />
           <Route path="/solicitudes/:id" element={<RequestDetail name={name} />} />
           <Route path="/notificaciones" element={<NotificationsPage />} />
@@ -352,7 +352,11 @@ function SearchPage({ name }: { name: string }) {
         ) : (
           <div className="poster-grid">
             {items.map((item) => (
-              <Link className="poster-card" to={`/titulo/${item.tmdbId}`} key={item.tmdbId}>
+              <Link
+                className="poster-card"
+                to={`/titulo/${item.type}/${item.tmdbId}`}
+                key={`${item.type}:${item.tmdbId}`}
+              >
                 <div className="poster-card__image">
                   <img
                     src={item.posterUrl}
@@ -376,9 +380,12 @@ function SearchPage({ name }: { name: string }) {
 }
 
 function MediaDetail({ name }: { name: string }) {
-  const { tmdbId } = useParams();
+  const { mediaType, tmdbId } = useParams();
   const navigate = useNavigate();
   const [media, setMedia] = useState<MediaMetadata | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [retry, setRetry] = useState(0);
   const [note, setNote] = useState('');
   const [scopeKind, setScopeKind] = useState<'season' | 'episode' | 'aired'>('aired');
   const [season, setSeason] = useState(1);
@@ -387,15 +394,50 @@ function MediaDetail({ name }: { name: string }) {
   const [error, setError] = useState('');
 
   useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setLoadError('');
+    const type = mediaType === 'movie' || mediaType === 'series' ? mediaType : null;
+    if (!type || !tmdbId) {
+      setLoading(false);
+      setLoadError('El enlace de este título no es válido.');
+      return () => {
+        active = false;
+      };
+    }
     api
-      .search('')
-      .then((items) => setMedia(items.find((item) => item.tmdbId === Number(tmdbId)) ?? null));
-  }, [tmdbId]);
+      .getMedia(Number(tmdbId), type)
+      .then((item) => {
+        if (active) setMedia(item);
+      })
+      .catch((reason: Error) => {
+        if (active) setLoadError(reason.message);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [mediaType, tmdbId, retry]);
 
-  if (!media)
+  if (loading)
     return (
       <div className="page">
         <p>Cargando título…</p>
+      </div>
+    );
+
+  if (loadError || !media)
+    return (
+      <div className="page">
+        <div className="error-banner detail-load-error">
+          <span>{loadError || 'No encontramos ese título.'}</span>
+          <Button variant="secondary" onClick={() => setRetry((value) => value + 1)}>
+            Reintentar
+          </Button>
+          <Link to="/buscar">← Volver a buscar</Link>
+        </div>
       </div>
     );
 

@@ -15,6 +15,8 @@ type TmdbItem = {
   poster_path?: string | null;
 };
 
+type MediaType = 'movie' | 'series';
+
 const mapItem = (item: TmdbItem, localized?: TmdbItem) => {
   const type = item.media_type === 'tv' ? 'series' : item.media_type === 'movie' ? 'movie' : null;
   if (!type || item.adult || !item.poster_path) return null;
@@ -47,10 +49,17 @@ Deno.serve(async (request) => {
 
   const body = await request.json().catch(() => null);
   const query = typeof body?.query === 'string' ? body.query.trim().slice(0, 100) : '';
+  const tmdbId = Number(body?.tmdbId);
+  const mediaType: MediaType | null =
+    body?.mediaType === 'movie' || body?.mediaType === 'series' ? body.mediaType : null;
+  const detailRequested = body?.tmdbId !== undefined || body?.mediaType !== undefined;
+  if (detailRequested && (!Number.isInteger(tmdbId) || tmdbId <= 0 || !mediaType)) {
+    return safeError(request, 400, 'Título inválido.');
+  }
   const admin = adminClient();
   const { data: allowed } = await admin.rpc('check_rate_limit', {
     p_subject: member.user_id,
-    p_action: 'tmdb-search',
+    p_action: detailRequested ? 'tmdb-details' : 'tmdb-search',
     p_limit: 40,
     p_window_seconds: 60,
   });
@@ -58,6 +67,35 @@ Deno.serve(async (request) => {
 
   const key = Deno.env.get('TMDB_API_READ_TOKEN');
   if (!key) return safeError(request, 503, 'La búsqueda todavía no está configurada.');
+  const fetchTmdb = async (path: string, language: string) => {
+    const url = new URL(`https://api.themoviedb.org/3/${path}`);
+    url.searchParams.set('language', language);
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${key}`, Accept: 'application/json' },
+      signal: AbortSignal.timeout(6_000),
+    });
+    if (!response.ok) throw new Error(`TMDB_${response.status}`);
+    return (await response.json()) as TmdbItem;
+  };
+
+  if (detailRequested && mediaType) {
+    try {
+      const path = `${mediaType === 'series' ? 'tv' : 'movie'}/${tmdbId}`;
+      const [spanish, english] = await Promise.all([
+        fetchTmdb(path, 'es-MX'),
+        fetchTmdb(path, 'en-US'),
+      ]);
+      const tmdbMediaType = mediaType === 'series' ? 'tv' : 'movie';
+      const item = mapItem(
+        { ...english, media_type: tmdbMediaType },
+        { ...spanish, media_type: tmdbMediaType },
+      );
+      return item ? json(request, item) : safeError(request, 404, 'No encontramos ese título.');
+    } catch {
+      return safeError(request, 502, 'TMDB no respondió. Intenta nuevamente.');
+    }
+  }
+
   const endpoint = query ? 'search/multi' : 'trending/all/week';
   const buildUrl = (language: string) => {
     const url = new URL(`https://api.themoviedb.org/3/${endpoint}`);

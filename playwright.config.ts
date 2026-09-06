@@ -8,7 +8,7 @@ export default defineConfig({
   expect: { timeout: 8_000 },
   reporter: [['list'], ['html', { open: 'never' }]],
   use: {
-    baseURL: 'http://127.0.0.1:5173',
+    baseURL: 'http://127.0.0.1:5175',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },
@@ -19,19 +19,26 @@ export default defineConfig({
   webServer: [
     {
       command: 'npm run dev --workspace @media-concierge/api',
-      url: 'http://127.0.0.1:4100/health',
+      url: 'http://127.0.0.1:4110/health',
+      env: {
+        CONCIERGE_API_PORT: '4110',
+        CORS_ORIGINS: 'http://127.0.0.1:5175,http://127.0.0.1:5176',
+        MEDIA_CONCIERGE_SKIP_ENV_FILE: '1',
+      },
       reuseExistingServer: true,
       timeout: 120_000,
     },
     {
-      command: 'npm run dev --workspace @media-concierge/portal -- --host 127.0.0.1',
-      url: 'http://127.0.0.1:5173',
+      command: 'npm run dev --workspace @media-concierge/portal -- --host 127.0.0.1 --port 5175',
+      url: 'http://127.0.0.1:5175',
+      env: { VITE_CONCIERGE_API_URL: 'http://127.0.0.1:4110' },
       reuseExistingServer: true,
       timeout: 120_000,
     },
     {
-      command: 'npm run dev --workspace @media-concierge/admin -- --host 127.0.0.1',
-      url: 'http://127.0.0.1:5174',
+      command: 'npm run dev --workspace @media-concierge/admin -- --host 127.0.0.1 --port 5176',
+      url: 'http://127.0.0.1:5176',
+      env: { VITE_CONCIERGE_API_URL: 'http://127.0.0.1:4110' },
       reuseExistingServer: true,
       timeout: 120_000,
     },

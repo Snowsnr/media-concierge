@@ -733,6 +733,18 @@ legend {
   color: var(--gold) !important;
   font-size: 13px;
 }
+
+.detail-load-error {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.detail-load-error a {
+  color: inherit;
+  font-weight: 700;
+}
 .empty-state {
   padding: 65px 20px;
   border: 1px dashed var(--line);

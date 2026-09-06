@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 
-const apiUrl = 'http://127.0.0.1:4100';
+const apiUrl = 'http://127.0.0.1:4110';
+const adminUrl = 'http://127.0.0.1:5176';
 
 test.beforeEach(async ({ request }) => {
   await request.post(`${apiUrl}/api/demo/reset`, { data: {} });
@@ -21,7 +22,7 @@ test('a family member can search and create a request', async ({ page }) => {
 });
 
 test('the administrator manually completes the simulated movie workflow', async ({ page }) => {
-  await page.goto('http://127.0.0.1:5174');
+  await page.goto(adminUrl);
   await page.getByRole('link', { name: /Alien: Romulus/ }).click();
   await page.getByRole('button', { name: 'Aprobar y buscar releases' }).click();
 
@@ -40,7 +41,7 @@ test('the administrator manually completes the simulated movie workflow', async 
 });
 
 test('series expose season-pack and per-episode states', async ({ page }) => {
-  await page.goto('http://127.0.0.1:5174');
+  await page.goto(adminUrl);
   await page.getByRole('link', { name: /Juego de tronos/ }).click();
   await page.getByRole('button', { name: 'Aprobar y buscar releases' }).click();
 
@@ -62,7 +63,7 @@ test('series expose season-pack and per-episode states', async ({ page }) => {
 });
 
 test('simulated failures can be recovered without external services', async ({ page }) => {
-  await page.goto('http://127.0.0.1:5174');
+  await page.goto(adminUrl);
   await page.getByRole('link', { name: /Alien: Romulus/ }).click();
   await page.getByRole('button', { name: 'Aprobar y buscar releases' }).click();
   await page.getByRole('button', { name: 'Elegir' }).first().click();
@@ -97,7 +98,7 @@ test('simulated failures can be recovered without external services', async ({ p
 });
 
 test('the administrator can create and revoke a one-time invitation', async ({ page }) => {
-  await page.goto('http://127.0.0.1:5174/invitaciones');
+  await page.goto(`${adminUrl}/invitaciones`);
   await page.getByLabel('Identificador familiar').fill('Casa Rivera');
   await page.getByLabel('Expira en').selectOption('14');
   await page.getByRole('button', { name: 'Crear enlace seguro' }).click();
