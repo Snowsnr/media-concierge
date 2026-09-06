@@ -11,6 +11,32 @@ Deno.serve(async (request) => {
   const body = await request.json().catch(() => null);
   const action = body?.action;
   const admin = adminClient();
+  if (action === 'members') {
+    const { data, error } = await admin
+      .from('family_members')
+      .select('user_id, display_name, username, created_at, revoked_at')
+      .order('created_at', { ascending: false })
+      .limit(100);
+    if (error) return safeError(request, 500, 'No se pudieron cargar las cuentas familiares.');
+    return json(request, data ?? []);
+  }
+  if (action === 'reset-password') {
+    const userId = typeof body?.userId === 'string' ? body.userId : '';
+    const password = typeof body?.password === 'string' ? body.password : '';
+    if (!userId || password.length < 10 || password.length > 72) {
+      return safeError(request, 400, 'Datos de contraseña inválidos.');
+    }
+    const { data: member } = await admin
+      .from('family_members')
+      .select('user_id, username')
+      .eq('user_id', userId)
+      .is('revoked_at', null)
+      .maybeSingle();
+    if (!member?.username) return safeError(request, 404, 'La cuenta no está disponible.');
+    const { error } = await admin.auth.admin.updateUserById(userId, { password });
+    if (error) return safeError(request, 500, 'No se pudo restablecer la contraseña.');
+    return json(request, { reset: true });
+  }
   if (action === 'list') {
     const { data, error } = await admin
       .from('invitations')

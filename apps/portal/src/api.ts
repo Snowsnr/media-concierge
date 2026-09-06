@@ -12,6 +12,8 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 const remoteEnabled = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
 const supabase = remoteEnabled ? createClient(SUPABASE_URL!, SUPABASE_ANON_KEY!) : null;
+const normalizeUsername = (value: string) => value.trim().toLowerCase();
+const loginEmail = (username: string) => `${normalizeUsername(username)}@users.diegohomelab.fyi`;
 const publicRequestColumns = `
   id, tmdb_id, media_type, localized_title, original_title, release_year,
   overview, poster_url, note, scope, public_status, public_episodes,
@@ -42,6 +44,25 @@ interface PublicRequestRow {
   }>;
   family_members?: { display_name: string } | Array<{ display_name: string }>;
 }
+
+export interface FamilyProfile {
+  displayName: string;
+  username: string | null;
+}
+
+const functionErrorMessage = async (error: unknown, fallback: string) => {
+  if (error && typeof error === 'object' && 'context' in error) {
+    const context = (error as { context?: unknown }).context;
+    if (context instanceof Response) {
+      const body = (await context
+        .clone()
+        .json()
+        .catch(() => null)) as { message?: string } | null;
+      if (body?.message) return body.message;
+    }
+  }
+  return fallback;
+};
 
 async function localRequest<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
@@ -104,30 +125,85 @@ export const api = {
   remoteEnabled,
   inviteToken: () => new URLSearchParams(window.location.hash.slice(1)).get('invite'),
   currentProfile: async () => {
-    if (!supabase) return localStorage.getItem('concierge-family-name');
-    const { data } = await supabase.from('family_members').select('display_name').maybeSingle();
-    return data?.display_name ?? null;
+    if (!supabase) {
+      const displayName = localStorage.getItem('concierge-family-name');
+      return displayName ? { displayName, username: 'demo' } : null;
+    }
+    const { data } = await supabase
+      .from('family_members')
+      .select('display_name, username')
+      .maybeSingle();
+    return data
+      ? { displayName: data.display_name, username: data.username as string | null }
+      : null;
   },
-  enter: async (displayName: string, inviteToken: string | null) => {
+  register: async (
+    displayName: string,
+    username: string,
+    password: string,
+    inviteToken: string | null,
+  ): Promise<FamilyProfile> => {
     if (!supabase) {
       localStorage.setItem('concierge-family-name', displayName);
-      return displayName;
+      return { displayName, username: normalizeUsername(username) || 'demo' };
     }
     if (!inviteToken)
       throw new Error('Abre el enlace de invitación que te envió el administrador.');
-    const { data: sessionData } = await supabase.auth.getSession();
-    if (sessionData.session) await supabase.auth.signOut();
-    const { error: signInError } = await supabase.auth.signInAnonymously();
-    if (signInError) throw new Error('No pudimos iniciar una sesión segura.');
-    const { error } = await supabase.functions.invoke('redeem-invite', {
-      body: { token: inviteToken, displayName },
+    await supabase.auth.signOut();
+    const normalized = normalizeUsername(username);
+    const { error } = await supabase.functions.invoke('account-access', {
+      body: { action: 'register', token: inviteToken, displayName, username: normalized, password },
     });
     if (error) {
-      await supabase.auth.signOut();
-      throw new Error('La invitación expiró, fue utilizada o está revocada.');
+      throw new Error(await functionErrorMessage(error, 'No pudimos crear tu cuenta.'));
     }
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email: loginEmail(normalized),
+      password,
+    });
+    if (signInError) throw new Error('La cuenta se creó, pero no pudimos iniciar sesión.');
     window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
-    return displayName;
+    return { displayName, username: normalized };
+  },
+  upgradeAccount: async (username: string, password: string): Promise<FamilyProfile> => {
+    if (!supabase) {
+      const displayName = localStorage.getItem('concierge-family-name') ?? username;
+      return { displayName, username: normalizeUsername(username) };
+    }
+    const normalized = normalizeUsername(username);
+    const { data, error } = await supabase.functions.invoke<{ profile: FamilyProfile }>(
+      'account-access',
+      { body: { action: 'upgrade', username: normalized, password } },
+    );
+    if (error || !data?.profile) {
+      throw new Error(await functionErrorMessage(error, 'No pudimos crear tu acceso permanente.'));
+    }
+    await supabase.auth.signOut();
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email: loginEmail(normalized),
+      password,
+    });
+    if (signInError) throw new Error('La cuenta se actualizó, pero no pudimos iniciar sesión.');
+    return data.profile;
+  },
+  login: async (username: string, password: string): Promise<FamilyProfile> => {
+    if (!supabase) {
+      const displayName = normalizeUsername(username) || 'Familia';
+      localStorage.setItem('concierge-family-name', displayName);
+      return { displayName, username: normalizeUsername(username) || 'demo' };
+    }
+    await supabase.auth.signOut();
+    const { error } = await supabase.auth.signInWithPassword({
+      email: loginEmail(username),
+      password,
+    });
+    if (error) throw new Error('Usuario o contraseña incorrectos.');
+    const profile = await api.currentProfile();
+    if (!profile) {
+      await supabase.auth.signOut();
+      throw new Error('Esta cuenta no tiene acceso familiar activo.');
+    }
+    return profile;
   },
   exit: async () => {
     if (supabase) await supabase.auth.signOut();

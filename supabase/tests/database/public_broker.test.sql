@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(19);
+select plan(23);
 
 select ok(
   (
@@ -54,12 +54,25 @@ select ok(
   has_table_privilege('authenticated', 'public.public_request_history', 'SELECT'),
   'family sessions can read request history through RLS'
 );
+select ok(
+  has_column_privilege('authenticated', 'public.family_members', 'username', 'SELECT'),
+  'family sessions can read their own username through RLS'
+);
+select ok(
+  not has_function_privilege(
+    'authenticated',
+    'public.redeem_family_account(text,uuid,text,text)',
+    'EXECUTE'
+  ),
+  'permanent account redemption RPC is service-role only'
+);
 
 insert into auth.users (id, aud, role)
 values
   ('10000000-0000-4000-8000-000000000001', 'authenticated', 'authenticated'),
   ('10000000-0000-4000-8000-000000000002', 'authenticated', 'authenticated'),
-  ('10000000-0000-4000-8000-000000000003', 'authenticated', 'authenticated');
+  ('10000000-0000-4000-8000-000000000003', 'authenticated', 'authenticated'),
+  ('10000000-0000-4000-8000-000000000004', 'authenticated', 'authenticated');
 
 insert into public.invitations (id, label, token_hash, expires_at)
 values
@@ -79,6 +92,12 @@ values
     '20000000-0000-4000-8000-000000000003',
     'Familia C',
     repeat('c', 64),
+    now() + interval '1 day'
+  ),
+  (
+    '20000000-0000-4000-8000-000000000004',
+    'Familia D',
+    repeat('d', 64),
     now() + interval '1 day'
   );
 
@@ -202,6 +221,27 @@ select throws_ok(
   'P0001',
   'INVITATION_INVALID',
   'A redeemed invitation cannot be replayed'
+);
+
+select lives_ok(
+  $$
+    select public.redeem_family_account(
+      repeat('d', 64),
+      '10000000-0000-4000-8000-000000000004',
+      'Familia D',
+      'familia.d'
+    )
+  $$,
+  'A valid invitation can create a permanent family account'
+);
+select is(
+  (
+    select username
+    from public.family_members
+    where user_id = '10000000-0000-4000-8000-000000000004'
+  ),
+  'familia.d',
+  'Permanent account redemption stores the normalized username'
 );
 
 select is(

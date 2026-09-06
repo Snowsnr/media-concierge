@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Link, NavLink, Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom';
 import type { FamilyRequest, MediaMetadata, SeriesScope } from '@media-concierge/shared';
 import { Button, EmptyState, StatusPill } from '@media-concierge/ui';
-import { api } from './api';
+import { api, type FamilyProfile } from './api';
 
 const formatDate = (value: string) =>
   new Intl.DateTimeFormat('es-MX', { dateStyle: 'medium', timeStyle: 'short' }).format(
@@ -48,12 +48,12 @@ function Shell({ name, onExit }: { name: string; onExit: () => Promise<void> }) 
 }
 
 export function App() {
-  const [name, setName] = useState<string | null>(null);
+  const [profile, setProfile] = useState<FamilyProfile | null>(null);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
     api
       .currentProfile()
-      .then(setName)
+      .then(setProfile)
       .finally(() => setLoading(false));
   }, []);
   if (loading)
@@ -62,37 +62,55 @@ export function App() {
         <div className="welcome__content">Preparando tu sesión segura…</div>
       </main>
     );
-  if (!name)
+  if (!profile)
     return (
       <Welcome
         remote={api.remoteEnabled}
         hasInvite={Boolean(api.inviteToken())}
-        onContinue={async (value) => setName(await api.enter(value, api.inviteToken()))}
+        onRegister={async (displayName, username, password) =>
+          setProfile(await api.register(displayName, username, password, api.inviteToken()))
+        }
+        onLogin={async (username, password) => setProfile(await api.login(username, password))}
+      />
+    );
+  if (!profile.username)
+    return (
+      <AccountUpgrade
+        displayName={profile.displayName}
+        onUpgrade={async (username, password) =>
+          setProfile(await api.upgradeAccount(username, password))
+        }
       />
     );
   return (
     <Shell
-      name={name}
+      name={profile.displayName}
       onExit={async () => {
         await api.exit();
-        setName('');
+        setProfile(null);
       }}
     />
   );
 }
 
 function Welcome({
-  onContinue,
+  onRegister,
+  onLogin,
   remote,
   hasInvite,
 }: {
-  onContinue: (name: string) => Promise<void>;
+  onRegister: (displayName: string, username: string, password: string) => Promise<void>;
+  onLogin: (username: string, password: string) => Promise<void>;
   remote: boolean;
   hasInvite: boolean;
 }) {
-  const [name, setName] = useState('Ana');
+  const [displayName, setDisplayName] = useState('Ana');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmation, setConfirmation] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const registering = remote && hasInvite;
   return (
     <main className="welcome">
       <div className="welcome__glow" />
@@ -103,39 +121,187 @@ function Welcome({
           <br />
           <em>Nosotros seguimos la función.</em>
         </h1>
-        <p>Busca una peli o serie y sigue su camino hasta que esté lista en Jellyfin.</p>
+        <p>
+          {registering
+            ? 'Crea tu acceso familiar. La invitación sólo se necesita esta primera vez.'
+            : 'Inicia sesión para pedir películas y seguirlas hasta Jellyfin.'}
+        </p>
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            if (!name.trim()) return;
+            if (!username.trim() || password.length < 10) return;
+            if (registering && password !== confirmation) {
+              setError('Las contraseñas no coinciden.');
+              return;
+            }
             setBusy(true);
             setError('');
-            void onContinue(name.trim())
+            const action = registering
+              ? onRegister(displayName.trim(), username, password)
+              : onLogin(username, password);
+            void action
               .catch((reason: Error) => setError(reason.message))
               .finally(() => setBusy(false));
           }}
         >
-          <label htmlFor="name">¿Cómo te llamas?</label>
-          <div className="welcome__form-row">
-            <input
-              id="name"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              maxLength={80}
-            />
+          <div className="welcome__fields">
+            {registering && (
+              <label>
+                Nombre visible
+                <input
+                  value={displayName}
+                  onChange={(event) => setDisplayName(event.target.value)}
+                  minLength={2}
+                  maxLength={80}
+                  autoComplete="name"
+                  required
+                />
+              </label>
+            )}
+            <label>
+              Usuario
+              <input
+                value={username}
+                onChange={(event) => setUsername(event.target.value)}
+                minLength={3}
+                maxLength={32}
+                pattern="[A-Za-z0-9][A-Za-z0-9._-]{2,31}"
+                autoCapitalize="none"
+                autoComplete="username"
+                placeholder="ana"
+                required
+              />
+            </label>
+            <label>
+              Contraseña
+              <input
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                minLength={10}
+                maxLength={72}
+                autoComplete={registering ? 'new-password' : 'current-password'}
+                required
+              />
+            </label>
+            {registering && (
+              <label>
+                Repite la contraseña
+                <input
+                  type="password"
+                  value={confirmation}
+                  onChange={(event) => setConfirmation(event.target.value)}
+                  minLength={10}
+                  maxLength={72}
+                  autoComplete="new-password"
+                  required
+                />
+              </label>
+            )}
             <Button type="submit" disabled={busy}>
-              {busy ? 'Validando…' : remote ? 'Canjear invitación →' : 'Entrar al demo →'}
+              {busy
+                ? 'Validando…'
+                : registering
+                  ? 'Crear mi cuenta →'
+                  : remote
+                    ? 'Iniciar sesión →'
+                    : 'Entrar al demo →'}
             </Button>
           </div>
         </form>
         {error && <p className="error-banner">{error}</p>}
         <small>
-          {remote
-            ? hasInvite
-              ? 'Invitación detectada · se eliminará del navegador después de canjearla.'
-              : 'Necesitas abrir tu enlace de invitación personal.'
-            : 'Acceso simulado · configura Supabase para activar invitaciones reales.'}
+          {registering
+            ? 'Después podrás usar estas credenciales en la web app y otros dispositivos.'
+            : '¿Eres nuevo? Pide al administrador un enlace de invitación.'}
         </small>
+      </div>
+    </main>
+  );
+}
+
+function AccountUpgrade({
+  displayName,
+  onUpgrade,
+}: {
+  displayName: string;
+  onUpgrade: (username: string, password: string) => Promise<void>;
+}) {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmation, setConfirmation] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  return (
+    <main className="welcome">
+      <div className="welcome__glow" />
+      <div className="welcome__content">
+        <span className="eyebrow">Hola, {displayName}</span>
+        <h1>
+          Conserva tus pedidos.
+          <br />
+          <em>Crea tu acceso permanente.</em>
+        </h1>
+        <p>Elige las credenciales que usarás en la web app y en cualquier otro dispositivo.</p>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (password !== confirmation) {
+              setError('Las contraseñas no coinciden.');
+              return;
+            }
+            setBusy(true);
+            setError('');
+            void onUpgrade(username, password)
+              .catch((reason: Error) => setError(reason.message))
+              .finally(() => setBusy(false));
+          }}
+        >
+          <div className="welcome__fields">
+            <label>
+              Usuario
+              <input
+                value={username}
+                onChange={(event) => setUsername(event.target.value)}
+                minLength={3}
+                maxLength={32}
+                pattern="[A-Za-z0-9][A-Za-z0-9._-]{2,31}"
+                autoCapitalize="none"
+                autoComplete="username"
+                required
+              />
+            </label>
+            <label>
+              Contraseña
+              <input
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                minLength={10}
+                maxLength={72}
+                autoComplete="new-password"
+                required
+              />
+            </label>
+            <label>
+              Repite la contraseña
+              <input
+                type="password"
+                value={confirmation}
+                onChange={(event) => setConfirmation(event.target.value)}
+                minLength={10}
+                maxLength={72}
+                autoComplete="new-password"
+                required
+              />
+            </label>
+            <Button type="submit" disabled={busy}>
+              {busy ? 'Guardando…' : 'Crear acceso permanente →'}
+            </Button>
+          </div>
+        </form>
+        {error && <p className="error-banner">{error}</p>}
+        <small>Tu historial y solicitudes actuales se conservarán.</small>
       </div>
     </main>
   );

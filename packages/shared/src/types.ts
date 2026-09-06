@@ -155,6 +155,14 @@ export interface CreatedInvitation extends InvitationSummary {
   inviteUrl: string;
 }
 
+export interface FamilyAccountSummary {
+  userId: string;
+  displayName: string;
+  username: string | null;
+  createdAt: string;
+  revokedAt: string | null;
+}
+
 export interface ReleaseScoreReason {
   points: number;
   label: string;

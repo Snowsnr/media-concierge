@@ -14,10 +14,10 @@ This repository contains **Phases 0–2**. The complete simulated workflow still
 - Fastify API backed by local SQLite and deterministic mock adapters.
 - Strict shared contracts and a guarded, tested state machine.
 - PWA manifest and service worker shell for the family portal.
-- Supabase schema with Row Level Security, revocable one-time invitations, and isolated family data.
+- Supabase schema with Row Level Security, revocable one-time invitations, permanent family credentials, and isolated family data.
 - Server-validated TMDB search and request creation through rate-limited Edge Functions.
 - Outbound-only, idempotent Supabase-to-homelab broker synchronization.
-- Invitation management in the private admin panel.
+- Invitation, family-account, and password-reset management in the private admin panel.
 - GitHub Pages workflow for publishing only the family portal at `pedidos.diegohomelab.fyi`.
 - Development Docker Compose file and architecture/security/roadmap documentation.
 

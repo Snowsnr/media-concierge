@@ -20,6 +20,7 @@ import {
   subtitleSelectionSchema,
   toFamilyRequest,
   type CreatedInvitation,
+  type FamilyAccountSummary,
   type InvitationSummary,
 } from '@media-concierge/shared';
 import { randomUUID } from 'node:crypto';
@@ -60,6 +61,7 @@ const push = new MockPushProvider();
 const requestParams = z.object({ id: z.string().uuid() });
 const selectionBody = z.object({ candidateId: z.string().min(1).max(200) });
 const episodeParams = z.object({ id: z.string().uuid(), episodeId: z.string().uuid() });
+const resetFamilyPasswordBody = z.object({ password: z.string().min(10).max(72) });
 
 const continueAfterImport = (id: string) => {
   repository.setAllAiredEpisodeStates(id, 'IMPORTED');
@@ -452,6 +454,14 @@ const mapInvitation = (row: Record<string, unknown>): InvitationSummary => ({
   revokedAt: row.revoked_at ? String(row.revoked_at) : null,
 });
 
+const mapFamilyAccount = (row: Record<string, unknown>): FamilyAccountSummary => ({
+  userId: String(row.user_id),
+  displayName: String(row.display_name),
+  username: row.username ? String(row.username) : null,
+  createdAt: String(row.created_at),
+  revokedAt: row.revoked_at ? String(row.revoked_at) : null,
+});
+
 app.get('/api/invitations', async () => {
   if (!brokerConfigured) return [];
   const rows = await invitationFunction<Record<string, unknown>[]>({ action: 'list' });
@@ -483,6 +493,19 @@ app.post('/api/invitations/:id/revoke', async (request) => {
   const { id } = requestParams.parse(request.params);
   if (!brokerConfigured) return { revoked: true, mode: 'mock' };
   return invitationFunction({ action: 'revoke', invitationId: id });
+});
+
+app.get('/api/family-accounts', async () => {
+  if (!brokerConfigured) return [];
+  const rows = await invitationFunction<Record<string, unknown>[]>({ action: 'members' });
+  return rows.map(mapFamilyAccount);
+});
+
+app.post('/api/family-accounts/:id/reset-password', async (request) => {
+  const { id } = requestParams.parse(request.params);
+  const { password } = resetFamilyPasswordBody.parse(request.body);
+  if (!brokerConfigured) return { reset: true, mode: 'mock' };
+  return invitationFunction({ action: 'reset-password', userId: id, password });
 });
 
 app.setErrorHandler((error, _request, reply) => {

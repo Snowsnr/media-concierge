@@ -915,14 +915,16 @@ button {
   align-items: start;
 }
 .invite-form-card,
-.invite-list-card {
+.invite-list-card,
+.account-list-card {
   padding: 20px;
   border: 1px solid var(--line);
   border-radius: 13px;
   background: var(--paper);
 }
 .invite-form-card h2,
-.invite-list-card h2 {
+.invite-list-card h2,
+.account-list-card h2 {
   margin: 0 0 18px;
   font: 800 17px 'Manrope';
 }
@@ -1004,6 +1006,46 @@ button {
 .invite-status--revocada,
 .invite-status--expirada {
   background: #a7a1a7;
+}
+.account-list-card {
+  grid-column: 1 / -1;
+}
+.account-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+.account-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fbf9f4;
+}
+.account-row > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+.account-row small {
+  color: var(--muted);
+  font-size: 9px;
+}
+.password-reset-row {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto auto;
+  gap: 8px;
+}
+.password-reset-row input {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  background: #fff;
 }
 
 @media (max-width: 900px) {
@@ -1110,6 +1152,10 @@ button {
     grid-template-columns: 1fr;
   }
   .invitation-layout {
+    grid-template-columns: 1fr;
+  }
+  .account-row,
+  .password-reset-row {
     grid-template-columns: 1fr;
   }
 }

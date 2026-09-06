@@ -13,9 +13,9 @@ The complete mock path is navigable: search → request → approve → inspect 
 
 No real service credentials are required by Phase 1.
 
-## Phase 2 — public search and broker (implemented; deployment pending)
+## Phase 2 — public search and broker (deployed)
 
-Supabase migrations, Row Level Security, one-time invitation redemption, revocation, family sessions, bilingual TMDB search, server-validated request creation, rate limiting, and idempotent outbound polling are implemented. The private admin can create and revoke invitations. A GitHub Pages workflow publishes only the family portal. Activation still requires creating the Supabase project, setting secrets/variables, DNS configuration, and deploying the included functions. No ARR control exists yet.
+Supabase migrations, Row Level Security, one-time account invitations, revocation, username/password family access, bilingual TMDB search, server-validated request creation, rate limiting, and idempotent outbound polling are implemented. Existing anonymous family sessions can be upgraded in place without losing requests. The private admin can create and revoke invitations, list family accounts, and reset passwords. GitHub Pages publishes only the family portal; the administration surface and outbound broker stay in the homelab. No ARR control exists yet.
 
 ## Phase 3 — notifications
 

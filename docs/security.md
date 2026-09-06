@@ -15,7 +15,9 @@
 
 ## Invitations and public data
 
-Invitation tokens are generated with 256 bits of cryptographic randomness and stored only as SHA-256 hashes. Because the source tokens have high entropy, offline guessing is impractical without storing the plaintext. Redemption is one-time, expiring, revocable, rate-limited, and exchanged for an anonymous Supabase Auth session tied to one family profile. Tokens use a URL fragment and are removed from browser history after redemption.
+Invitation tokens are generated with 256 bits of cryptographic randomness and stored only as SHA-256 hashes. Because the source tokens have high entropy, offline guessing is impractical without storing the plaintext. Redemption is one-time, expiring, revocable, and rate-limited. It creates a username/password Supabase Auth account tied to one family profile; legacy anonymous sessions can be converted in place. Tokens use a URL fragment and are removed from browser history after redemption.
+
+Usernames are normalized and mapped internally to synthetic email identifiers; family members never need to provide a real email address. Password creation and administrative resets run only through Edge Functions using server-side Auth administration. Passwords are handled by Supabase Auth and are never stored in application tables or logs.
 
 Supabase Row Level Security binds every read to the authenticated family identity, while column grants hide bridge timestamps, internal identifiers, and version fields. Family roles cannot insert, update, or delete broker rows directly; a rate-limited Edge Function validates the request, reloads canonical metadata from TMDB, and writes with the service role. Adult search is rejected, result counts are constrained, and user-supplied internal URLs are not accepted. The service-role key never reaches a browser.
 

@@ -43,7 +43,7 @@ export const activeFamilyMember = async (request: Request) => {
   if (!user) return null;
   const { data } = await adminClient()
     .from('family_members')
-    .select('user_id, display_name, revoked_at')
+    .select('user_id, display_name, username, revoked_at')
     .eq('user_id', user.id)
     .is('revoked_at', null)
     .maybeSingle();

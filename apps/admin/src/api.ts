@@ -1,6 +1,7 @@
 import type {
   DownloadControlAction,
   CreatedInvitation,
+  FamilyAccountSummary,
   HealthCheck,
   InvitationSummary,
   MediaRequest,
@@ -57,4 +58,7 @@ export const api = {
   createInvitation: (label: string, expiresInDays: number) =>
     post<CreatedInvitation>('/api/invitations', { label, expiresInDays }),
   revokeInvitation: (id: string) => post<{ revoked: boolean }>(`/api/invitations/${id}/revoke`),
+  familyAccounts: () => request<FamilyAccountSummary[]>('/api/family-accounts'),
+  resetFamilyPassword: (id: string, password: string) =>
+    post<{ reset: boolean }>(`/api/family-accounts/${id}/reset-password`, { password }),
 };

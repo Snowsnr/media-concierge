@@ -29,3 +29,6 @@ verify_jwt = false
 
 [functions.bridge-sync]
 verify_jwt = false
+
+[functions.account-access]
+verify_jwt = false

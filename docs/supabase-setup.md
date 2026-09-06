@@ -11,7 +11,7 @@ supabase link --project-ref YOUR_PROJECT_REF
 supabase db push
 ```
 
-In Supabase Authentication settings, enable anonymous sign-ins. Anonymous accounts cannot access application data until a valid invitation is redeemed and a `family_members` row exists.
+In Supabase Authentication settings, keep anonymous sign-ins enabled temporarily so existing invited sessions can be converted without losing their request history. New invitations create permanent username/password accounts directly; anonymous users cannot access application data unless a valid `family_members` row already exists.
 
 ## 2. Configure Edge Function secrets
 
@@ -23,10 +23,11 @@ supabase secrets set HOMELAB_BRIDGE_TOKEN=YOUR_LONG_RANDOM_BRIDGE_TOKEN
 supabase secrets set PUBLIC_PORTAL_ORIGIN=https://pedidos.diegohomelab.fyi
 ```
 
-Deploy the five functions:
+Deploy the six functions:
 
 ```bash
 supabase functions deploy redeem-invite
+supabase functions deploy account-access --no-verify-jwt
 supabase functions deploy tmdb-search
 supabase functions deploy create-request
 supabase functions deploy invitations --no-verify-jwt
@@ -64,11 +65,15 @@ Point `pedidos.diegohomelab.fyi` to GitHub Pages using the DNS records GitHub do
 
 ## 6. Create the first invitation
 
-Once the homelab API has its bridge token, open the private admin panel and use **Invitaciones**. The returned token appears in the URL fragment (`#invite=...`), is shown only once, and is stored in Supabase only as a SHA-256 hash. Opening the link creates an anonymous Supabase session and atomically redeems the invitation.
+Once the homelab API has its bridge token, open the private admin panel and use **Invitaciones**. The returned token appears in the URL fragment (`#invite=...`), is shown only once, and is stored in Supabase only as a SHA-256 hash. Opening the link lets the family member choose a username and password; submitting the form creates a confirmed account and atomically redeems the invitation.
+
+Existing anonymous family sessions are prompted to choose credentials. The conversion updates the same Supabase Auth user, preserving the member row and every existing request. Afterwards, the private admin panel lists family accounts and can set a replacement password without learning or displaying the previous one.
 
 ## Verification checklist
 
-- An uninvited anonymous user cannot read profiles, requests, or history.
+- An uninvited user cannot create a family account or read profiles, requests, or history.
+- A redeemed invitation cannot be used to create a second account.
+- An existing anonymous member can convert its account without changing its user ID.
 - Family A cannot read Family B requests.
 - A revoked member immediately loses RLS access.
 - Invitation redemption, TMDB search, and request creation rate-limit callers.

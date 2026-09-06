@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, NavLink, Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom';
 import type {
+  FamilyAccountSummary,
   HealthCheck,
   InvitationSummary,
   MediaRequest,
@@ -977,12 +978,23 @@ function HealthPage() {
 
 function InvitationsPage() {
   const [items, setItems] = useState<InvitationSummary[]>([]);
+  const [accounts, setAccounts] = useState<FamilyAccountSummary[]>([]);
   const [label, setLabel] = useState('Familia');
   const [expiresInDays, setExpiresInDays] = useState(7);
   const [createdUrl, setCreatedUrl] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
-  const load = useCallback(() => api.invitations().then(setItems), []);
+  const [resetUserId, setResetUserId] = useState('');
+  const [resetPassword, setResetPassword] = useState('');
+  const [accountMessage, setAccountMessage] = useState('');
+  const load = useCallback(async () => {
+    const [invitations, familyAccounts] = await Promise.all([
+      api.invitations(),
+      api.familyAccounts(),
+    ]);
+    setItems(invitations);
+    setAccounts(familyAccounts);
+  }, []);
   useEffect(() => {
     void load();
   }, [load]);
@@ -998,6 +1010,19 @@ function InvitationsPage() {
       setMessage(error instanceof Error ? error.message : 'No se pudo crear la invitación.');
     } finally {
       setBusy(false);
+    }
+  };
+  const savePassword = async (userId: string) => {
+    setAccountMessage('');
+    try {
+      await api.resetFamilyPassword(userId, resetPassword);
+      setResetPassword('');
+      setResetUserId('');
+      setAccountMessage('Contraseña restablecida. Compártela por un canal privado.');
+    } catch (error) {
+      setAccountMessage(
+        error instanceof Error ? error.message : 'No se pudo restablecer la contraseña.',
+      );
     }
   };
   return (
@@ -1088,6 +1113,67 @@ function InvitationsPage() {
                   </div>
                 );
               })}
+            </div>
+          )}
+        </section>
+        <section className="account-list-card">
+          <h2>Cuentas familiares</h2>
+          <p className="muted-copy">
+            Cada familiar inicia sesión con su usuario. Desde aquí puedes asignar una contraseña
+            temporal si la olvida.
+          </p>
+          {accountMessage && <p className="invite-message">{accountMessage}</p>}
+          {accounts.length === 0 ? (
+            <p className="muted-copy">Las cuentas aparecerán después de completar el registro.</p>
+          ) : (
+            <div className="account-list">
+              {accounts.map((account) => (
+                <div className="account-row" key={account.userId}>
+                  <div>
+                    <strong>{account.displayName}</strong>
+                    <small>
+                      {account.username
+                        ? `@${account.username}`
+                        : 'Acceso anónimo pendiente de migrar'}
+                      {account.revokedAt ? ' · Revocada' : ''}
+                    </small>
+                  </div>
+                  {account.username && !account.revokedAt && resetUserId !== account.userId && (
+                    <Button variant="ghost" onClick={() => setResetUserId(account.userId)}>
+                      Restablecer contraseña
+                    </Button>
+                  )}
+                  {resetUserId === account.userId && (
+                    <div className="password-reset-row">
+                      <input
+                        aria-label={`Nueva contraseña para ${account.displayName}`}
+                        type="password"
+                        minLength={10}
+                        maxLength={72}
+                        autoComplete="new-password"
+                        placeholder="Mínimo 10 caracteres"
+                        value={resetPassword}
+                        onChange={(event) => setResetPassword(event.target.value)}
+                      />
+                      <Button
+                        disabled={resetPassword.length < 10}
+                        onClick={() => void savePassword(account.userId)}
+                      >
+                        Guardar
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        onClick={() => {
+                          setResetUserId('');
+                          setResetPassword('');
+                        }}
+                      >
+                        Cancelar
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           )}
         </section>
