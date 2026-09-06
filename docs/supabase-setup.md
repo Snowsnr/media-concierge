@@ -38,7 +38,7 @@ Never place the TMDB token, service-role key, or bridge token in `VITE_*` variab
 
 ## 3. Configure the private homelab process
 
-Set these only in the private container environment:
+For local development, copy `.env.example` to the ignored root file `.env.local` and set these values there. The private API automatically loads that file when it starts. In the homelab deployment, set the same values only in the private container environment:
 
 ```text
 SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
