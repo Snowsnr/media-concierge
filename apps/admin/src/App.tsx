@@ -5,6 +5,7 @@ import type {
   HealthCheck,
   InvitationSummary,
   AppNotification,
+  ArrConfiguration,
   MediaRequest,
   NotificationConfig,
   ReleaseCandidate,
@@ -194,6 +195,7 @@ function RequestWorkspace() {
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [radarrLive, setRadarrLive] = useState(false);
   const load = useCallback(async () => {
     if (!id) return;
     const result = await api.getRequest(id);
@@ -204,6 +206,30 @@ function RequestWorkspace() {
   useEffect(() => {
     load().catch((reason: Error) => setError(reason.message));
   }, [load]);
+  useEffect(() => {
+    api
+      .radarrConfiguration()
+      .then((configuration) => setRadarrLive(configuration.mode === 'radarr'))
+      .catch(() => setRadarrLive(false));
+  }, []);
+  useEffect(() => {
+    if (
+      !id ||
+      !radarrLive ||
+      busy ||
+      item?.media.type !== 'movie' ||
+      !['QUEUED', 'DOWNLOADING', 'IMPORTING'].includes(item.state)
+    ) {
+      return;
+    }
+    const interval = window.setInterval(() => {
+      void api
+        .refreshRadarr(id)
+        .then(() => load())
+        .catch((reason: Error) => setError(reason.message));
+    }, 8_000);
+    return () => window.clearInterval(interval);
+  }, [busy, id, item?.media.type, item?.state, load, radarrLive]);
   const act = async (task: () => Promise<MediaRequest>) => {
     setBusy(true);
     setError('');
@@ -255,7 +281,10 @@ function RequestWorkspace() {
             'IMPORTING',
             'SUBTITLES_REQUIRED',
             'VERIFYING_JELLYFIN',
-          ].includes(item.state) && <ScenarioLab item={item} busy={busy} act={act} />}
+          ].includes(item.state) &&
+            !(radarrLive && item.media.type === 'movie') && (
+              <ScenarioLab item={item} busy={busy} act={act} />
+            )}
           <Workflow
             item={item}
             releases={releases}
@@ -264,6 +293,7 @@ function RequestWorkspace() {
             setNote={setNote}
             busy={busy}
             act={act}
+            radarrLive={radarrLive}
           />
         </section>
         <aside className="context-column">
@@ -296,6 +326,7 @@ function Workflow({
   setNote,
   busy,
   act,
+  radarrLive,
 }: {
   item: MediaRequest;
   releases: ReleaseCandidate[];
@@ -304,6 +335,7 @@ function Workflow({
   setNote: (value: string) => void;
   busy: boolean;
   act: (task: () => Promise<MediaRequest>) => Promise<void>;
+  radarrLive: boolean;
 }) {
   if (pendingStates.includes(item.state))
     return (
@@ -311,7 +343,8 @@ function Workflow({
         <span className="step-label">Paso 1 · Decisión</span>
         <h2>Revisar solicitud</h2>
         <p className="workflow-copy">
-          Aprobar no elige ni descarga un lanzamiento. Solo prepara la búsqueda mock para que tú
+          Aprobar no elige ni descarga un lanzamiento. Solo prepara la búsqueda{' '}
+          {radarrLive && item.media.type === 'movie' ? 'interactiva de Radarr' : 'mock'} para que tú
           compares.
         </p>
         <textarea
@@ -383,8 +416,11 @@ function Workflow({
   if (item.state === 'DOWNLOADING' || item.state === 'QUEUED')
     return (
       <div>
-        <span className="step-label">Paso 3 · Seguimiento mock</span>
-        <h2>Descargando</h2>
+        <span className="step-label">
+          Paso 3 ·{' '}
+          {radarrLive && item.media.type === 'movie' ? 'Cola de Radarr' : 'Seguimiento mock'}
+        </span>
+        <h2>{item.state === 'QUEUED' ? 'En cola' : 'Descargando'}</h2>
         <div className="download-panel">
           <div className="download-title">
             <strong>{item.media.localizedTitle}</strong>
@@ -393,44 +429,70 @@ function Workflow({
           <div className="progress-track">
             <span style={{ width: `${item.progress}%` }} />
           </div>
-          <div className="download-stats">
-            <div>
-              <span>Velocidad</span>
-              <strong>18.4 MB/s</strong>
+          {radarrLive && item.media.type === 'movie' ? (
+            <p className="workflow-copy">
+              Progreso reportado por la cola de Radarr. Seeds, peers, velocidad y ETA reales se
+              conectarán directamente a qBittorrent en la fase 5.
+            </p>
+          ) : (
+            <div className="download-stats">
+              <div>
+                <span>Velocidad</span>
+                <strong>18.4 MB/s</strong>
+              </div>
+              <div>
+                <span>Seeds reales</span>
+                <strong>12</strong>
+              </div>
+              <div>
+                <span>Peers reales</span>
+                <strong>4</strong>
+              </div>
+              <div>
+                <span>ETA</span>
+                <strong>
+                  {item.progress
+                    ? `${Math.ceil((100 - item.progress) / 25) * 2} min`
+                    : 'Calculando'}
+                </strong>
+              </div>
             </div>
-            <div>
-              <span>Seeds reales</span>
-              <strong>12</strong>
-            </div>
-            <div>
-              <span>Peers reales</span>
-              <strong>4</strong>
-            </div>
-            <div>
-              <span>ETA</span>
-              <strong>
-                {item.progress ? `${Math.ceil((100 - item.progress) / 25) * 2} min` : 'Calculando'}
-              </strong>
-            </div>
-          </div>
+          )}
           <div className="control-row">
-            <Button disabled={busy} onClick={() => act(() => api.advance(item.id))}>
-              {item.progress < 75 ? 'Simular +25%' : 'Completar e importar'}
-            </Button>
             <Button
-              variant="secondary"
               disabled={busy}
-              onClick={() => act(() => api.controlDownload(item.id, 'pause'))}
+              onClick={() =>
+                act(() =>
+                  radarrLive && item.media.type === 'movie'
+                    ? api.refreshRadarr(item.id)
+                    : api.advance(item.id),
+                )
+              }
             >
-              Pausar
+              {radarrLive && item.media.type === 'movie'
+                ? 'Actualizar desde Radarr'
+                : item.progress < 75
+                  ? 'Simular +25%'
+                  : 'Completar e importar'}
             </Button>
-            <Button
-              variant="ghost"
-              disabled={busy}
-              onClick={() => act(() => api.controlDownload(item.id, 'reannounce'))}
-            >
-              Forzar reannounce
-            </Button>
+            {!(radarrLive && item.media.type === 'movie') && (
+              <>
+                <Button
+                  variant="secondary"
+                  disabled={busy}
+                  onClick={() => act(() => api.controlDownload(item.id, 'pause'))}
+                >
+                  Pausar
+                </Button>
+                <Button
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() => act(() => api.controlDownload(item.id, 'reannounce'))}
+                >
+                  Forzar reannounce
+                </Button>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -954,8 +1016,15 @@ function History({ item }: { item: MediaRequest }) {
 
 function HealthPage() {
   const [checks, setChecks] = useState<HealthCheck[]>([]);
+  const [radarrConfig, setRadarrConfig] = useState<ArrConfiguration | null>(null);
+  const [error, setError] = useState('');
   useEffect(() => {
-    api.health().then(setChecks);
+    Promise.all([api.health(), api.radarrConfiguration()])
+      .then(([nextChecks, configuration]) => {
+        setChecks(nextChecks);
+        setRadarrConfig(configuration);
+      })
+      .catch((reason: Error) => setError(reason.message));
   }, []);
   return (
     <div className="admin-page">
@@ -963,9 +1032,10 @@ function HealthPage() {
         <div>
           <span className="kicker">Observabilidad</span>
           <h1>Salud de integraciones</h1>
-          <p>Todos los adaptadores siguen aislados y simulados.</p>
+          <p>Comprueba conexiones reales y simuladas sin revelar credenciales.</p>
         </div>
       </div>
+      {error && <p className="error-box">{error}</p>}
       <div className="health-grid">
         {checks.map((check) => (
           <div className="health-card" key={check.name}>
@@ -978,6 +1048,66 @@ function HealthPage() {
           </div>
         ))}
       </div>
+      {radarrConfig && (
+        <section className="radarr-config-card">
+          <div className="radarr-config-heading">
+            <div>
+              <span className="kicker">Fase 4 · Películas</span>
+              <h2>
+                {radarrConfig.mode === 'radarr' ? 'Configuración de Radarr' : 'Radarr simulado'}
+              </h2>
+            </div>
+            <code>{radarrConfig.configured ? 'LISTO' : 'SIN ESCRITURA'}</code>
+          </div>
+          {radarrConfig.issues.length > 0 && (
+            <ul>
+              {radarrConfig.issues.map((issue) => (
+                <li key={issue}>{issue}</li>
+              ))}
+            </ul>
+          )}
+          {radarrConfig.mode === 'radarr' && (
+            <>
+              <div className="radarr-config-grid">
+                <div>
+                  <span>Versión</span>
+                  <strong>{radarrConfig.version ?? 'No indicada'}</strong>
+                </div>
+                <div>
+                  <span>Perfil seleccionado</span>
+                  <strong>
+                    {radarrConfig.qualityProfiles.find(
+                      (profile) => profile.id === radarrConfig.selectedQualityProfileId,
+                    )?.name ?? 'Pendiente'}
+                  </strong>
+                </div>
+                <div>
+                  <span>Carpeta raíz</span>
+                  <strong>{radarrConfig.selectedRootFolderPath ?? 'Pendiente'}</strong>
+                </div>
+              </div>
+              <div className="radarr-options">
+                <div>
+                  <h3>Perfiles disponibles</h3>
+                  {radarrConfig.qualityProfiles.map((profile) => (
+                    <code key={profile.id}>
+                      {profile.id} · {profile.name}
+                    </code>
+                  ))}
+                </div>
+                <div>
+                  <h3>Carpetas disponibles</h3>
+                  {radarrConfig.rootFolders.map((root) => (
+                    <code key={root.id}>
+                      {root.path} · {root.accessible ? 'accesible' : 'no accesible'}
+                    </code>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+        </section>
+      )}
     </div>
   );
 }

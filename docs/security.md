@@ -29,8 +29,8 @@ All inputs are parsed through shared schemas. React escapes release names by def
 
 ## Development safety
 
-ARR, torrent, subtitle, media-server, and push adapters are mocks and perform no network calls. The optional Supabase broker is the only real adapter and is disabled unless both private variables are supplied. The repository contains no credentials. Real integration tests must be opt-in, clearly named, and require explicit administrator authorization. They must never delete production data as part of an automated suite.
+Torrent, subtitle, media-server, Sonarr, and local push adapters are mocks and perform no network calls. The optional Supabase broker and Radarr adapter are disabled unless their complete private connection pair is supplied. The repository contains no credentials. Radarr receives no automatic-search instruction: adding a movie and selecting a release remain separate actions. Real integration tests must be opt-in, clearly named, and require explicit administrator authorization. They must never delete production data as part of an automated suite.
 
-## Threat review before Phase 4
+## Threat review for private integrations
 
-Phase 2 addresses invitation replay, basic brute force, direct broker writes, cross-family reads, duplicated broker deliveries, private-state leakage, and inbound homelab exposure. Before connecting ARR services, review session theft, broker-token rotation, SSRF, malicious release strings, log leakage, Tailscale identity enforcement, CSRF, push subscription abuse, and least-privilege network policy.
+Phase 2 addresses invitation replay, basic brute force, direct broker writes, cross-family reads, duplicated broker deliveries, private-state leakage, and inbound homelab exposure. Before production deployment, finish the review of session theft, broker-token rotation, SSRF, malicious release strings, log leakage, Tailscale identity enforcement, CSRF, push subscription abuse, and least-privilege network policy. The Radarr base URL is configuration-only, rejects embedded credentials/query fragments, and is never accepted from a request, but the deployment network must still restrict the API container to the intended private services.

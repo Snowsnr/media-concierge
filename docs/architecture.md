@@ -16,6 +16,8 @@ Without Phase 2 variables, three local processes run in mock mode. Both React ap
 
 With public-service variables, the family portal uses Supabase Auth, RLS-protected reads, and Edge Functions. Search and creation are validated server-side; the browser never receives the TMDB token or a privileged Supabase key. The private Fastify API polls Supabase over outbound HTTPS, deduplicates each public UUID in SQLite, and publishes sanitized state back to the family's row. Supabase cannot initiate a connection to the homelab.
 
+When the private Radarr variables are present, only the Fastify API calls Radarr over the private network. Approval performs duplicate detection and may add an unsearched movie; it cannot grab a release. A later interactive search returns sanitized candidates to the admin, and only an explicit selection sends the chosen candidate back to Radarr. The family portal and Supabase never receive Radarr credentials, internal URLs, release names, or queue identifiers.
+
 Supabase also owns the public-safe notification outbox and Web Push delivery records. VAPID signing happens only inside Edge Functions. Family subscriptions are bound to the authenticated member; admin subscriptions are created only through the bridge-authenticated private API. Delivery retries are durable and expired browser subscriptions are removed automatically. Both PWAs retain an in-app notification history when push permission or platform support is unavailable.
 
 The state machine lives in `packages/shared`, separate from transport and adapters. Every transition is validated and appended to an audit history. Request creation accepts an idempotency key, enforced by a unique SQLite index. Series add a persisted episode matrix; several episodes may reference the same simulated season-pack download group while retaining individual subtitle and readiness state.
@@ -33,7 +35,7 @@ The integrations package defines these replaceable interfaces:
 - `MediaServerClient`
 - `PushNotificationProvider`
 
-The Supabase broker adapter already uses bounded timeouts and limited retries with backoff. Future ARR adapters must also add runtime response validation, health checks, and secret redaction. Orchestration depends on interfaces rather than direct HTTP clients.
+The Supabase broker adapter uses bounded timeouts and limited retries with backoff. The Radarr adapter adds runtime response validation, health/configuration checks, bounded requests, and redacted HTTP errors. Orchestration depends on interfaces rather than direct HTTP clients; missing Radarr variables select the deterministic mock.
 
 ## Persistence and recovery
 

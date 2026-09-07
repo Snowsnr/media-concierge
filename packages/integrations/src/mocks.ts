@@ -44,13 +44,42 @@ export class MockMetadataProvider implements MetadataProvider {
 }
 
 export class MockArrClient implements RadarrClient, SonarrClient {
+  constructor(private readonly name = 'Radarr / Sonarr') {}
   async health() {
-    return mockHealth('Radarr / Sonarr');
+    return mockHealth(this.name);
+  }
+  async configuration() {
+    return {
+      mode: 'mock' as const,
+      configured: false,
+      version: null,
+      qualityProfiles: [],
+      rootFolders: [],
+      selectedQualityProfileId: null,
+      selectedRootFolderPath: null,
+      issues: ['Adaptador simulado; no hay conexión externa.'],
+    };
   }
   async lookup(_tmdbId: number) {
-    return { exists: false };
+    return {
+      exists: false,
+      movieId: null,
+      title: null,
+      monitored: false,
+      hasFile: false,
+      movieFileId: null,
+    };
   }
-  async add(_request: MediaRequest) {}
+  async add(request: MediaRequest) {
+    return {
+      exists: true,
+      movieId: request.media.tmdbId,
+      title: request.media.localizedTitle,
+      monitored: true,
+      hasFile: false,
+      movieFileId: null,
+    };
+  }
   async searchReleases(request: MediaRequest) {
     return request.media.type === 'series'
       ? buildMockSeriesReleases(request.id)
@@ -58,6 +87,9 @@ export class MockArrClient implements RadarrClient, SonarrClient {
   }
   async grab(release: ReleaseCandidate) {
     return { downloadId: `mock-${release.id}` };
+  }
+  async queue(_tmdbId: number) {
+    return null;
   }
 }
 

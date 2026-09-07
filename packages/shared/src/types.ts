@@ -81,6 +81,7 @@ export interface MediaRequest {
   publicStatus: PublicStatus;
   progress: number;
   selectedReleaseId: string | null;
+  downloadId: string | null;
   selectedSubtitleId: string | null;
   mockScenario: MockScenario;
   episodes: EpisodeProgress[];
@@ -208,6 +209,49 @@ export interface ReleaseCandidate {
   ageHours: number;
   score: number;
   scoreReasons: ReleaseScoreReason[];
+}
+
+export interface ArrMovieLookup {
+  exists: boolean;
+  movieId: number | null;
+  title: string | null;
+  monitored: boolean;
+  hasFile: boolean;
+  movieFileId: number | null;
+}
+
+export interface ArrQualityProfile {
+  id: number;
+  name: string;
+}
+
+export interface ArrRootFolder {
+  id: number;
+  path: string;
+  accessible: boolean;
+  freeSpace: number | null;
+}
+
+export interface ArrConfiguration {
+  mode: 'mock' | 'radarr';
+  configured: boolean;
+  version: string | null;
+  qualityProfiles: ArrQualityProfile[];
+  rootFolders: ArrRootFolder[];
+  selectedQualityProfileId: number | null;
+  selectedRootFolderPath: string | null;
+  issues: string[];
+}
+
+export interface ArrQueueStatus {
+  queueId: number;
+  movieId: number;
+  title: string;
+  status: string;
+  trackedState: string;
+  progress: number;
+  downloadId: string | null;
+  errorMessage: string | null;
 }
 
 export interface SubtitleCandidate {

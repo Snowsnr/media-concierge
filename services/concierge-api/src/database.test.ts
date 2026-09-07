@@ -41,6 +41,7 @@ describe('RequestRepository', () => {
     const firstRepository = new RequestRepository(path);
     const request = firstRepository.list().find((item) => item.media.type === 'movie')!;
     firstRepository.transition(request.id, 'APPROVED', 'admin', 'Persistence test approval.');
+    firstRepository.setDownload(request.id, 'radarr-download-id');
     firstRepository.close();
 
     const secondRepository = new RequestRepository(path);
@@ -48,6 +49,7 @@ describe('RequestRepository', () => {
 
     expect(restored?.state).toBe('APPROVED');
     expect(restored?.history.at(-1)?.note).toBe('Persistence test approval.');
+    expect(restored?.downloadId).toBe('radarr-download-id');
     secondRepository.close();
   });
 

@@ -33,6 +33,11 @@ describe('request state machine', () => {
     expect(() => assertTransition('APPROVED', 'QUEUED')).toThrow(/Invalid request transition/);
   });
 
+  it('skips duplicate download work when Radarr already has the movie file', () => {
+    expect(canTransition('ADDING_TO_ARR', 'WAITING_FOR_BAZARR')).toBe(true);
+    expect(canTransition('ADDING_TO_ARR', 'READY')).toBe(false);
+  });
+
   it('allows recovery from a stalled download without hiding human choice', () => {
     expect(canTransition('STALLED', 'DOWNLOADING')).toBe(true);
     expect(canTransition('STALLED', 'SELECTING_RELEASE')).toBe(true);

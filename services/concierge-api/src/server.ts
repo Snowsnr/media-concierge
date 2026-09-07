@@ -9,7 +9,10 @@ import {
   MockPushProvider,
   MockSubtitleClient,
   MockTorrentClient,
+  RadarrClientV3,
+  RadarrHttpError,
   SupabasePublicRequestBroker,
+  type RadarrClient,
 } from '@media-concierge/integrations';
 import {
   adminDecisionSchema,
@@ -48,7 +51,22 @@ await app.register(cors, {
 
 const repository = new RequestRepository();
 const metadata = new MockMetadataProvider();
-const arr = new MockArrClient();
+const radarrConfigured = Boolean(process.env.RADARR_URL && process.env.RADARR_API_KEY);
+const radarr: RadarrClient = radarrConfigured
+  ? new RadarrClientV3({
+      baseUrl: process.env.RADARR_URL!,
+      apiKey: process.env.RADARR_API_KEY!,
+      qualityProfileId: process.env.RADARR_QUALITY_PROFILE_ID
+        ? Number(process.env.RADARR_QUALITY_PROFILE_ID)
+        : null,
+      rootFolderPath: process.env.RADARR_ROOT_FOLDER_PATH ?? null,
+      tagIds: (process.env.RADARR_TAG_IDS ?? '')
+        .split(',')
+        .map((value) => Number(value.trim()))
+        .filter((value) => Number.isInteger(value) && value > 0),
+    })
+  : new MockArrClient('Radarr');
+const sonarr = new MockArrClient('Sonarr');
 const torrent = new MockTorrentClient();
 const subtitles = new MockSubtitleClient();
 const mediaServer = new MockMediaServerClient();
@@ -60,6 +78,8 @@ const broker = brokerConfigured
     })
   : new MockPublicBroker();
 const push = new MockPushProvider();
+const arrFor = (item: NonNullable<ReturnType<RequestRepository['get']>>) =>
+  item.media.type === 'movie' ? radarr : sonarr;
 
 const publishPublicStatus = async <T extends ReturnType<RequestRepository['get']>>(item: T) => {
   if (item) {
@@ -113,9 +133,75 @@ const completeSeriesIfReady = (id: string) => {
     : item;
 };
 
+const refreshRadarrRequest = async (id: string) => {
+  let item = repository.get(id);
+  if (!item) throw new Error('Request not found');
+  if (!radarrConfigured || item.media.type !== 'movie') return item;
+  if (!['QUEUED', 'DOWNLOADING', 'IMPORTING'].includes(item.state)) {
+    throw new Error(`Invalid Radarr refresh while in ${item.state}`);
+  }
+
+  const queue = await radarr.queue(item.media.tmdbId);
+  if (queue) {
+    if (queue.downloadId && queue.downloadId !== item.downloadId) {
+      item = repository.setDownload(id, queue.downloadId);
+    }
+    item = repository.setProgress(id, queue.progress);
+    if (item.state === 'QUEUED' && queue.status.toLowerCase() !== 'queued') {
+      item = repository.transition(
+        id,
+        'DOWNLOADING',
+        'system',
+        'Radarr confirmó que la descarga comenzó.',
+      );
+    }
+    if (
+      ['QUEUED', 'DOWNLOADING'].includes(item.state) &&
+      (['warning', 'failed'].some((value) => queue.trackedState.toLowerCase().includes(value)) ||
+        queue.errorMessage)
+    ) {
+      return repository.transition(
+        id,
+        'STALLED',
+        'system',
+        queue.errorMessage ?? 'Radarr reportó que la descarga necesita atención.',
+      );
+    }
+    return item;
+  }
+
+  const movie = await radarr.lookup(item.media.tmdbId);
+  if (!movie.hasFile) {
+    return repository.recordEvent(
+      id,
+      'system',
+      'Radarr todavía no reporta una descarga activa ni un archivo importado.',
+    );
+  }
+  if (item.state === 'QUEUED') {
+    item = repository.transition(
+      id,
+      'DOWNLOADING',
+      'system',
+      'Radarr completó la descarga antes de la siguiente consulta.',
+    );
+  }
+  if (item.state === 'DOWNLOADING') {
+    repository.setProgress(id, 100);
+    item = repository.transition(
+      id,
+      'IMPORTING',
+      'system',
+      'Radarr retiró el elemento de la cola y reportó un archivo de película.',
+    );
+  }
+  return item.state === 'IMPORTING' ? continueAfterImport(id) : item;
+};
+
 app.get('/health', async () => ({
   status: 'ok',
   mode: brokerConfigured ? 'supabase-broker' : 'mock',
+  radarr: radarrConfigured ? 'radarr' : 'mock',
   service: 'media-concierge-api',
 }));
 
@@ -123,7 +209,8 @@ app.get('/api/integrations/health', async () =>
   Promise.all([
     metadata.health(),
     broker.health(),
-    arr.health(),
+    radarr.health(),
+    sonarr.health(),
     torrent.health(),
     subtitles.health(),
     mediaServer.health(),
@@ -160,6 +247,23 @@ app.get('/api/requests/:id', async (request, reply) => {
   const { id } = requestParams.parse(request.params);
   const item = repository.get(id);
   return item ?? reply.code(404).send({ message: 'Solicitud no encontrada.' });
+});
+
+app.get('/api/integrations/radarr', async () => radarr.configuration());
+
+app.get('/api/requests/:id/radarr', async (request, reply) => {
+  const { id } = requestParams.parse(request.params);
+  const item = repository.get(id);
+  if (!item) return reply.code(404).send({ message: 'Solicitud no encontrada.' });
+  if (item.media.type !== 'movie') {
+    return reply.code(409).send({ message: 'Esta solicitud no corresponde a Radarr.' });
+  }
+  const [configuration, movie, queue] = await Promise.all([
+    radarr.configuration(),
+    radarr.lookup(item.media.tmdbId),
+    radarr.queue(item.media.tmdbId),
+  ]);
+  return { configuration, movie, queue };
 });
 
 app.post('/api/requests', async (request, reply) => {
@@ -199,20 +303,57 @@ app.post('/api/requests/:id/decision', async (request) => {
     decision.note || 'Solicitud aprobada manualmente.',
   );
   await publishPublicStatus(approved);
-  repository.transition(id, 'ADDING_TO_ARR', 'system', 'Simulando alta segura en Radarr o Sonarr.');
-  return repository.transition(
+  const adding = repository.transition(
     id,
-    'SELECTING_RELEASE',
+    'ADDING_TO_ARR',
     'system',
-    'Resultados listos. Esperando selección manual del administrador.',
+    approved.media.type === 'movie' && radarrConfigured
+      ? 'Preparando alta segura en Radarr sin búsqueda automática.'
+      : 'Simulando alta segura en Radarr o Sonarr.',
   );
+  try {
+    const client = arrFor(adding);
+    const existing = await client.lookup(adding.media.tmdbId);
+    const prepared = existing.exists ? existing : await client.add(adding);
+    if (prepared.hasFile) {
+      repository.transition(
+        id,
+        'WAITING_FOR_BAZARR',
+        'system',
+        'Radarr ya contiene un archivo importado; se omitió cualquier descarga duplicada.',
+      );
+      return repository.transition(
+        id,
+        'SUBTITLES_REQUIRED',
+        'system',
+        'Archivo existente listo para la revisión manual de subtítulos.',
+      );
+    }
+    return repository.transition(
+      id,
+      'SELECTING_RELEASE',
+      'system',
+      approved.media.type === 'movie' && radarrConfigured
+        ? 'Película preparada en Radarr. Esperando selección manual del administrador.'
+        : 'Resultados listos. Esperando selección manual del administrador.',
+    );
+  } catch (error) {
+    const failed = repository.transition(
+      id,
+      'FAILED',
+      'system',
+      error instanceof Error ? error.message : 'Radarr no pudo preparar la película.',
+    );
+    await publishPublicStatus(failed);
+    return failed;
+  }
 });
 
 app.get('/api/requests/:id/releases', async (request) => {
   const { id } = requestParams.parse(request.params);
   const item = repository.get(id);
   if (!item) throw new Error('Request not found');
-  return arr.searchReleases(item);
+  return arrFor(item).searchReleases(item);
 });
 
 app.post('/api/requests/:id/releases/select', async (request) => {
@@ -220,11 +361,13 @@ app.post('/api/requests/:id/releases/select', async (request) => {
   const { candidateId } = selectionBody.parse(request.body);
   const item = repository.get(id);
   if (!item) throw new Error('Request not found');
-  const releases = await arr.searchReleases(item);
+  const client = arrFor(item);
+  const releases = await client.searchReleases(item);
   const selected = releases.find((release) => release.id === candidateId);
   if (!selected) throw new Error('Release not found');
-  await arr.grab(selected);
+  const grabbed = await client.grab(selected);
   repository.setRelease(id, selected.id);
+  repository.setDownload(id, grabbed.downloadId);
   repository.setAllAiredEpisodeStates(id, 'QUEUED');
   repository.transition(
     id,
@@ -232,6 +375,9 @@ app.post('/api/requests/:id/releases/select', async (request) => {
     'admin',
     `Release seleccionado manualmente: ${selected.title}`,
   );
+  if (item.media.type === 'movie' && radarrConfigured) {
+    return repository.get(id)!;
+  }
   return repository.transition(id, 'DOWNLOADING', 'system', 'Descarga simulada iniciada.');
 });
 
@@ -239,6 +385,10 @@ app.post('/api/requests/:id/advance', async (request) => {
   const { id } = requestParams.parse(request.params);
   let item = repository.get(id);
   if (!item) throw new Error('Request not found');
+
+  if (radarrConfigured && item.media.type === 'movie') {
+    return refreshRadarrRequest(id);
+  }
 
   if (item.state === 'DOWNLOADING') {
     if (item.mockScenario === 'stalled') {
@@ -279,6 +429,11 @@ app.post('/api/requests/:id/advance', async (request) => {
     return continueAfterImport(id);
   }
   throw new Error(`Cannot advance request while in ${item.state}`);
+});
+
+app.post('/api/requests/:id/radarr/refresh', async (request) => {
+  const { id } = requestParams.parse(request.params);
+  return refreshRadarrRequest(id);
 });
 
 app.get('/api/requests/:id/subtitles', async (request) => {
@@ -585,7 +740,16 @@ app.setErrorHandler((error, _request, reply) => {
   }
   const message = error instanceof Error ? error.message : 'Unknown request error';
   const name = error instanceof Error ? error.name : 'UnknownError';
-  const status = message.includes('not found') ? 404 : message.startsWith('Invalid') ? 409 : 400;
+  const status =
+    error instanceof RadarrHttpError
+      ? 502
+      : name === 'TimeoutError'
+        ? 504
+        : message.includes('not found')
+          ? 404
+          : message.startsWith('Invalid')
+            ? 409
+            : 400;
   app.log.warn({ err: { name, message } }, 'Request failed');
   return reply.code(status).send({ message });
 });

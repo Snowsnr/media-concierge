@@ -1,6 +1,9 @@
 import type {
   DownloadControlAction,
   AppNotification,
+  ArrConfiguration,
+  ArrMovieLookup,
+  ArrQueueStatus,
   CreatedInvitation,
   FamilyAccountSummary,
   HealthCheck,
@@ -55,6 +58,14 @@ export const api = {
     action: 'ready-without-subtitles' | 'retry-subtitles',
   ) => post<MediaRequest>(`/api/requests/${id}/episodes/${episodeId}`, { action }),
   health: () => request<HealthCheck[]>('/api/integrations/health'),
+  radarrConfiguration: () => request<ArrConfiguration>('/api/integrations/radarr'),
+  radarrStatus: (id: string) =>
+    request<{
+      configuration: ArrConfiguration;
+      movie: ArrMovieLookup;
+      queue: ArrQueueStatus | null;
+    }>(`/api/requests/${id}/radarr`),
+  refreshRadarr: (id: string) => post<MediaRequest>(`/api/requests/${id}/radarr/refresh`),
   reset: () => post<MediaRequest[]>('/api/demo/reset'),
   invitations: () => request<InvitationSummary[]>('/api/invitations'),
   createInvitation: (label: string, expiresInDays: number) =>

@@ -1,5 +1,8 @@
 import type {
   BrokerRequest,
+  ArrConfiguration,
+  ArrMovieLookup,
+  ArrQueueStatus,
   HealthCheck,
   MediaMetadata,
   MediaRequest,
@@ -20,10 +23,12 @@ export interface PublicRequestBroker {
 
 export interface RadarrClient {
   health(): Promise<HealthCheck>;
-  lookup(tmdbId: number): Promise<{ exists: boolean }>;
-  add(request: MediaRequest): Promise<void>;
+  configuration(): Promise<ArrConfiguration>;
+  lookup(tmdbId: number): Promise<ArrMovieLookup>;
+  add(request: MediaRequest): Promise<ArrMovieLookup>;
   searchReleases(request: MediaRequest): Promise<ReleaseCandidate[]>;
   grab(release: ReleaseCandidate): Promise<{ downloadId: string }>;
+  queue(tmdbId: number): Promise<ArrQueueStatus | null>;
 }
 
 export type SonarrClient = RadarrClient;

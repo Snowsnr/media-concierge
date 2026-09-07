@@ -27,6 +27,7 @@ interface RequestRow {
   state: string;
   progress: number;
   selected_release_id: string | null;
+  download_id: string | null;
   selected_subtitle_id: string | null;
   mock_scenario: string;
   episodes_json: string;
@@ -78,6 +79,7 @@ export class RequestRepository {
         state TEXT NOT NULL,
         progress INTEGER NOT NULL DEFAULT 0,
         selected_release_id TEXT,
+        download_id TEXT,
         selected_subtitle_id TEXT,
         mock_scenario TEXT NOT NULL DEFAULT 'none',
         episodes_json TEXT NOT NULL DEFAULT '[]',
@@ -111,6 +113,9 @@ export class RequestRepository {
     }
     if (!columns.some((column) => column.name === 'public_request_id')) {
       this.database.exec('ALTER TABLE requests ADD COLUMN public_request_id TEXT');
+    }
+    if (!columns.some((column) => column.name === 'download_id')) {
+      this.database.exec('ALTER TABLE requests ADD COLUMN download_id TEXT');
     }
     this.database.exec(
       'CREATE UNIQUE INDEX IF NOT EXISTS requests_public_request_id ON requests(public_request_id) WHERE public_request_id IS NOT NULL',
@@ -218,6 +223,13 @@ export class RequestRepository {
     return this.require(id);
   }
 
+  setDownload(id: string, downloadId: string): MediaRequest {
+    this.database
+      .prepare('UPDATE requests SET download_id = ?, updated_at = ? WHERE id = ?')
+      .run(downloadId, new Date().toISOString(), id);
+    return this.require(id);
+  }
+
   clearDownload(id: string): MediaRequest {
     const request = this.require(id);
     const episodes = request.episodes.map((episode) =>
@@ -227,7 +239,7 @@ export class RequestRepository {
     );
     this.database
       .prepare(
-        'UPDATE requests SET selected_release_id = NULL, progress = 0, episodes_json = ?, updated_at = ? WHERE id = ?',
+        'UPDATE requests SET selected_release_id = NULL, download_id = NULL, progress = 0, episodes_json = ?, updated_at = ? WHERE id = ?',
       )
       .run(JSON.stringify(episodes), new Date().toISOString(), id);
     return this.require(id);
@@ -349,6 +361,7 @@ export class RequestRepository {
       publicStatus: publicStatusFor(state),
       progress: row.progress,
       selectedReleaseId: row.selected_release_id,
+      downloadId: row.download_id,
       selectedSubtitleId: row.selected_subtitle_id,
       mockScenario: row.mock_scenario as MockScenario,
       episodes: JSON.parse(row.episodes_json) as EpisodeProgress[],

@@ -21,9 +21,13 @@ Supabase migrations, Row Level Security, one-time account invitations, revocatio
 
 Installability, VAPID subscription lifecycle, admin alerts, meaningful family notifications, durable delivery retries, and an in-app fallback are implemented. Family devices receive approval, clarification, ready, rejection, and failure events; admin devices receive new-request alerts. Intermediate progress does not create notification spam.
 
-## Phases 4–7 — movie workflow
+## Phase 4 — Radarr movie workflow (adapter ready; homelab validation pending)
 
-Introduce real adapters in order: Radarr, qBittorrent observability and coordinated cancellation, manual Bazarr subtitle choice, then Jellyfin availability verification. Each adapter lands behind contract tests and mock parity before an explicitly authorized homelab smoke test.
+The private API now supports Radarr v3 health and configuration discovery, TMDB duplicate detection, safe movie creation with automatic search disabled, interactive release results, explicit manual grab, and queue/import observation. Runtime response validation, bounded timeouts, redacted errors, contract tests, and mock parity are included. Phase 4 closes only after an explicitly authorized read-only check and a separate authorized end-to-end movie test against the homelab.
+
+## Phases 5–7 — remaining movie workflow
+
+Introduce real adapters in order: qBittorrent observability and coordinated cancellation, manual Bazarr subtitle choice, then Jellyfin availability verification. Each adapter lands behind contract tests and mock parity before an explicitly authorized homelab smoke test.
 
 ## Phase 8 — series
 
