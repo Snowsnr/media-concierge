@@ -111,6 +111,23 @@ describe('RadarrClientV3', () => {
       if (url.includes('/release?movieId='))
         return json([
           {
+            guid: 'release-guid-low-score',
+            title: 'Alien.Romulus.2024.720p.WEB-DL.x264-SLOW',
+            size: 15_000_000_000,
+            indexerId: 4,
+            indexer: 'Private Indexer',
+            ageHours: 24,
+            seeders: 1,
+            leechers: 0,
+            infoHash: 'LOW123',
+            rejected: false,
+            rejections: [],
+            customFormatScore: 0,
+            customFormats: [],
+            languages: [{ name: 'English' }],
+            quality: { quality: { name: 'WEBDL-720p', resolution: 720, source: 'webdl' } },
+          },
+          {
             guid: 'release-guid-1',
             title: 'Alien.Romulus.2024.1080p.BluRay.DDP5.1.x265-GROUP',
             size: 5_000_000_000,
@@ -141,7 +158,8 @@ describe('RadarrClientV3', () => {
     });
     const releases = await client.searchReleases(requestFixture());
 
-    expect(releases).toHaveLength(1);
+    expect(releases).toHaveLength(2);
+    expect(releases[0]!.score).toBeGreaterThan(releases[1]!.score);
     expect(releases[0]).toMatchObject({
       resolution: '1080p',
       videoCodec: 'x265 / HEVC',

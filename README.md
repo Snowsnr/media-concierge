@@ -2,7 +2,7 @@
 
 Media Concierge coordinates family movie and series requests with a private homelab while keeping the administrator in control. The public portal can only create requests; it can never start a download or reach private services.
 
-This repository contains **Phases 0–3** and the safe Radarr foundation for **Phase 4**. The complete simulated workflow still works without credentials, while the public portal, broker, accounts, and notifications can be activated with Supabase and TMDB configuration. Radarr is opt-in and private; Sonarr, qBittorrent, Bazarr, and Jellyfin remain simulated.
+This repository contains **Phases 0–4**. The complete simulated workflow still works without credentials, while the public portal, broker, accounts, and notifications can be activated with Supabase and TMDB configuration. Radarr is opt-in and private; Sonarr, qBittorrent, Bazarr, and Jellyfin remain simulated.
 
 ## What works now
 

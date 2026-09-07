@@ -318,42 +318,45 @@ export class RadarrClientV3 implements RadarrClient {
       z.array(releaseSchema).max(1_000),
       'búsqueda interactiva',
     );
-    return releases.slice(0, 200).map((release) => {
-      const identity = `${request.id}:${release.guid ?? release.id ?? release.title}:${release.indexerId ?? 0}`;
-      const id = createHash('sha256').update(identity).digest('hex');
-      this.releases.set(id, release);
-      const quality = release.quality.quality;
-      const resolution = quality.resolution ?? 0;
-      const details = releaseDetails(release.title ?? 'Release sin nombre');
-      const scoring = scoreRelease(release);
-      return {
-        id,
-        requestId: request.id,
-        title: release.title ?? 'Release sin nombre',
-        coverage: 'Película completa',
-        quality: quality.name ?? 'Calidad no indicada',
-        resolution: resolution >= 2160 ? '2160p' : resolution >= 1080 ? '1080p' : '720p',
-        source:
-          typeof quality.source === 'string' ? quality.source : (quality.name ?? 'No indicada'),
-        videoCodec: details.videoCodec,
-        audioCodec: details.audioCodec,
-        sizeBytes: release.size,
-        indexer: release.indexer ?? 'Indexador no indicado',
-        seeds: release.seeders ?? 0,
-        leechers: release.leechers ?? 0,
-        languages: (release.languages ?? [])
-          .map((language) => language.name)
-          .filter((name): name is string => Boolean(name)),
-        isRepack: /\b(?:repack|proper)\b/i.test(release.title ?? ''),
-        rejections: release.rejections ?? [],
-        customFormats: (release.customFormats ?? [])
-          .map((format) => format.name)
-          .filter((name): name is string => Boolean(name)),
-        ageHours: release.ageHours,
-        score: scoring.score,
-        scoreReasons: scoring.reasons,
-      };
-    });
+    return releases
+      .slice(0, 200)
+      .map<ReleaseCandidate>((release) => {
+        const identity = `${request.id}:${release.guid ?? release.id ?? release.title}:${release.indexerId ?? 0}`;
+        const id = createHash('sha256').update(identity).digest('hex');
+        this.releases.set(id, release);
+        const quality = release.quality.quality;
+        const resolution = quality.resolution ?? 0;
+        const details = releaseDetails(release.title ?? 'Release sin nombre');
+        const scoring = scoreRelease(release);
+        return {
+          id,
+          requestId: request.id,
+          title: release.title ?? 'Release sin nombre',
+          coverage: 'Película completa',
+          quality: quality.name ?? 'Calidad no indicada',
+          resolution: resolution >= 2160 ? '2160p' : resolution >= 1080 ? '1080p' : '720p',
+          source:
+            typeof quality.source === 'string' ? quality.source : (quality.name ?? 'No indicada'),
+          videoCodec: details.videoCodec,
+          audioCodec: details.audioCodec,
+          sizeBytes: release.size,
+          indexer: release.indexer ?? 'Indexador no indicado',
+          seeds: release.seeders ?? 0,
+          leechers: release.leechers ?? 0,
+          languages: (release.languages ?? [])
+            .map((language) => language.name)
+            .filter((name): name is string => Boolean(name)),
+          isRepack: /\b(?:repack|proper)\b/i.test(release.title ?? ''),
+          rejections: release.rejections ?? [],
+          customFormats: (release.customFormats ?? [])
+            .map((format) => format.name)
+            .filter((name): name is string => Boolean(name)),
+          ageHours: release.ageHours,
+          score: scoring.score,
+          scoreReasons: scoring.reasons,
+        };
+      })
+      .sort((left, right) => right.score - left.score);
   }
 
   async grab(release: ReleaseCandidate): Promise<{ downloadId: string }> {
