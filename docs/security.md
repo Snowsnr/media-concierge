@@ -21,6 +21,8 @@ Usernames are normalized and mapped internally to synthetic email identifiers; f
 
 Supabase Row Level Security binds every read to the authenticated family identity, while column grants hide bridge timestamps, internal identifiers, and version fields. Family roles cannot insert, update, or delete broker rows directly; a rate-limited Edge Function validates the request, reloads canonical metadata from TMDB, and writes with the service role. Adult search is rejected, result counts are constrained, and user-supplied internal URLs are not accepted. The service-role key never reaches a browser.
 
+Push endpoints and encryption keys are never directly readable by family sessions. Subscription registration is authenticated and rate-limited, VAPID private material exists only as an Edge Function secret, and revoked accounts lose their push subscriptions. Notification payloads contain only the same public-safe title/status information visible in the family portal; admin push registration remains behind the private bridge.
+
 ## Web safety
 
 All inputs are parsed through shared schemas. React escapes release names by default. Future adapters must use allowlisted base URLs from server configuration; Media Concierge will not provide a generic proxy. State-changing admin routes will gain Tailscale identity enforcement plus CSRF/origin protections before deployment.

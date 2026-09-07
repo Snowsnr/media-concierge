@@ -688,9 +688,9 @@ legend {
   font-size: 11px;
 }
 .notification-page {
-  max-width: 520px;
+  max-width: 620px;
   text-align: center;
-  padding-top: 80px;
+  padding-top: 48px;
 }
 .notification-page h1 {
   font-size: 44px;
@@ -705,6 +705,68 @@ legend {
   display: block;
   margin-top: 22px;
   color: var(--muted);
+}
+.notification-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.notification-list {
+  margin-top: 46px;
+  text-align: left;
+  border-top: 1px solid var(--line);
+}
+.notification-list__heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 24px 0 10px;
+}
+.notification-list__heading h2 {
+  margin: 0;
+  font-size: 20px;
+}
+.notification-list__heading span {
+  color: var(--gold);
+  font-size: 11px;
+  font-weight: 700;
+}
+.notification-item {
+  display: grid;
+  grid-template-columns: 9px 1fr;
+  gap: 12px;
+  padding: 16px 10px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+}
+.notification-item--unread {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.025);
+}
+.notification-item__dot {
+  width: 7px;
+  height: 7px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: transparent;
+}
+.notification-item--unread .notification-item__dot {
+  background: var(--accent);
+  box-shadow: 0 0 0 4px rgba(240, 100, 69, 0.13);
+}
+.notification-item strong {
+  font-size: 14px;
+}
+.notification-item p {
+  margin: 5px 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.notification-item time,
+.notification-empty {
+  color: var(--muted);
+  font-size: 11px;
 }
 .notification-illustration {
   margin: 0 auto 30px;

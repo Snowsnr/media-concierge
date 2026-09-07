@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(23);
+select plan(29);
 
 select ok(
   (
@@ -16,6 +16,31 @@ select ok(
     )
   ),
   'RLS is enabled on every Phase 2 table'
+);
+
+select ok(
+  (
+    select bool_and(relrowsecurity)
+    from pg_class
+    where oid in (
+      'public.push_subscriptions'::regclass,
+      'public.notification_events'::regclass,
+      'public.push_deliveries'::regclass
+    )
+  ),
+  'RLS is enabled on every notification table'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.push_subscriptions', 'SELECT'),
+  'family sessions cannot read push encryption keys'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.push_deliveries', 'SELECT'),
+  'family sessions cannot inspect push deliveries'
+);
+select ok(
+  has_column_privilege('authenticated', 'public.notification_events', 'id', 'SELECT'),
+  'family sessions can read their in-app notifications through RLS'
 );
 
 select ok(
@@ -149,6 +174,48 @@ values
     'https://image.tmdb.org/t/p/w500/b.jpg'
   );
 
+insert into public.notification_events (
+  audience,
+  recipient_user_id,
+  request_id,
+  kind,
+  title,
+  body,
+  target_url,
+  dedupe_key
+)
+values
+  (
+    'family',
+    '10000000-0000-4000-8000-000000000001',
+    '30000000-0000-4000-8000-000000000001',
+    'APPROVED',
+    'Solicitud aprobada',
+    'Película A fue aprobada.',
+    '/solicitudes/30000000-0000-4000-8000-000000000001',
+    'family:a:approved'
+  ),
+  (
+    'family',
+    '10000000-0000-4000-8000-000000000002',
+    '30000000-0000-4000-8000-000000000002',
+    'READY',
+    'Ya está disponible',
+    'Película B ya está disponible.',
+    '/solicitudes/30000000-0000-4000-8000-000000000002',
+    'family:b:ready'
+  ),
+  (
+    'admin',
+    null,
+    '30000000-0000-4000-8000-000000000001',
+    'NEW_REQUEST',
+    'Nueva solicitud',
+    'Familia A pidió Película A.',
+    '/',
+    'admin:new:a'
+  );
+
 set local role authenticated;
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000001', true);
 select is(
@@ -174,6 +241,17 @@ select is(
   (select count(id)::integer from public.public_request_history),
   1,
   'Family A can read only its request history'
+);
+select is(
+  (select count(id)::integer from public.notification_events),
+  1,
+  'Family A sees only its own family notification'
+);
+update public.notification_events set read_at = now();
+select is(
+  (select count(id)::integer from public.notification_events where read_at is not null),
+  1,
+  'Family A can mark its own notification as read'
 );
 
 reset role;

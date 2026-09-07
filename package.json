@@ -22,7 +22,8 @@
     "test:watch": "vitest",
     "lint": "eslint . --max-warnings=0",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "generate:vapid": "node scripts/generate-vapid.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.55.0",

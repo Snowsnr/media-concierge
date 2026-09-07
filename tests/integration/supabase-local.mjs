@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createClient } from '@supabase/supabase-js';
@@ -56,6 +56,44 @@ const waitFor = async (task, timeoutMs = 12_000) => {
   }
   throw lastError ?? new Error('Timed out waiting for local integration');
 };
+
+const edgeDirectory = mkdtempSync(join(tmpdir(), 'media-concierge-edge-'));
+const edgeEnvironment = join(edgeDirectory, '.env');
+const vapidPair = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, [
+  'sign',
+  'verify',
+]);
+const vapidJwk = await crypto.subtle.exportKey('jwk', vapidPair.privateKey);
+writeFileSync(
+  edgeEnvironment,
+  [
+    `HOMELAB_BRIDGE_TOKEN=${bridgeToken}`,
+    `VAPID_PRIVATE_JWK='${JSON.stringify(vapidJwk)}'`,
+    'VAPID_SUBJECT=https://pedidos.diegohomelab.fyi',
+    '',
+  ].join('\n'),
+  { mode: 0o600 },
+);
+const edgeLogs = [];
+const edgeProcess = spawn('supabase', ['functions', 'serve', '--env-file', edgeEnvironment], {
+  cwd: process.cwd(),
+  stdio: ['ignore', 'pipe', 'pipe'],
+});
+edgeProcess.stdout.on('data', (chunk) => edgeLogs.push(String(chunk)));
+edgeProcess.stderr.on('data', (chunk) => edgeLogs.push(String(chunk)));
+const stopEdge = () => {
+  edgeProcess.kill('SIGTERM');
+  rmSync(edgeDirectory, { recursive: true, force: true });
+};
+process.once('exit', stopEdge);
+
+await waitFor(async () => {
+  const result = await edge('bridge-sync', { action: 'health' });
+  return result.response.ok;
+}, 30_000).catch((error) => {
+  if (edgeLogs.length) console.error(edgeLogs.join(''));
+  throw error;
+});
 
 const unauthorizedBridge = await edge('bridge-sync', { action: 'health' }, 'wrong-token');
 checked(unauthorizedBridge.response.status === 401, 'bridge rejects an invalid token');
@@ -156,6 +194,14 @@ checked(
   ownRequests[0].public_request_history.length === 2,
   'family history contains initial and approved public states',
 );
+const familyNotifications = await familyA.functions.invoke('notifications', {
+  body: { action: 'list' },
+});
+assert.ifError(familyNotifications.error);
+checked(
+  familyNotifications.data.length === 1 && familyNotifications.data[0].kind === 'APPROVED',
+  'family receives an in-app notification for an important status',
+);
 
 const { error: hiddenColumnError } = await familyA
   .from('public_requests')
@@ -223,6 +269,27 @@ try {
     'private API reports the public broker as healthy',
   );
 
+  const notificationConfig = await fetch(`${privateApiUrl}/api/notifications/config`).then(
+    (response) => response.json(),
+  );
+  checked(
+    notificationConfig.enabled && notificationConfig.publicKey.length === 87,
+    'private API exposes only the public VAPID key',
+  );
+  const notificationTestResponse = await fetch(`${privateApiUrl}/api/notifications/test`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{}',
+  });
+  checked(notificationTestResponse.ok, 'private API queues an admin test notification');
+  const adminNotifications = await fetch(`${privateApiUrl}/api/notifications`).then((response) =>
+    response.json(),
+  );
+  checked(
+    adminNotifications.some((item) => item.kind === 'TEST'),
+    'private API reads the admin in-app notification history',
+  );
+
   const imported = await waitFor(async () => {
     const response = await fetch(`${privateApiUrl}/api/requests`);
     if (!response.ok) return null;
@@ -279,6 +346,9 @@ const { data: afterRevoke, error: afterRevokeError } = await familyA
   .select('id');
 assert.ifError(afterRevokeError);
 checked(afterRevoke.length === 0, 'revocation immediately removes request access');
+
+process.removeListener('exit', stopEdge);
+stopEdge();
 
 console.log(`Supabase local integration: ${checks.length} checks passed.`);
 for (const check of checks) console.log(`✓ ${check}`);

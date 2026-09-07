@@ -4,7 +4,9 @@ import type {
   FamilyAccountSummary,
   HealthCheck,
   InvitationSummary,
+  AppNotification,
   MediaRequest,
+  NotificationConfig,
   ReleaseCandidate,
   RequestState,
   SubtitleCandidate,
@@ -54,6 +56,9 @@ export function App() {
           <NavLink to="/invitaciones">
             ◇ <span>Invitaciones</span>
           </NavLink>
+          <NavLink to="/avisos">
+            ♢ <span>Avisos</span>
+          </NavLink>
         </nav>
         <div className="privacy-card">
           <span>◉</span>
@@ -79,6 +84,7 @@ export function App() {
             <Route path="/salud" element={<HealthPage />} />
             <Route path="/criterios" element={<CriteriaPage />} />
             <Route path="/invitaciones" element={<InvitationsPage />} />
+            <Route path="/avisos" element={<AdminNotificationsPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
@@ -1178,6 +1184,197 @@ function InvitationsPage() {
           )}
         </section>
       </div>
+    </div>
+  );
+}
+
+function AdminNotificationsPage() {
+  const [config, setConfig] = useState<NotificationConfig>({ enabled: false, publicKey: '' });
+  const [items, setItems] = useState<AppNotification[]>([]);
+  const [subscribed, setSubscribed] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+  const supported =
+    'Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window;
+
+  const refresh = async () => setItems(await api.notifications());
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        const [nextConfig, notifications] = await Promise.all([
+          api.notificationConfig(),
+          api.notifications(),
+        ]);
+        const existing = supported
+          ? await (await navigator.serviceWorker.ready).pushManager.getSubscription()
+          : null;
+        if (existing && nextConfig.enabled && Notification.permission === 'granted') {
+          await api.subscribeNotifications(existing.toJSON());
+        }
+        if (active) {
+          setConfig(nextConfig);
+          setItems(notifications);
+          setSubscribed(Boolean(existing));
+        }
+      } catch (reason) {
+        if (active)
+          setMessage(reason instanceof Error ? reason.message : 'No pudimos cargar los avisos.');
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    void load();
+    const interval = window.setInterval(() => void refresh().catch(() => undefined), 15_000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, []);
+
+  const applicationServerKey = (value: string) => {
+    const padded = value
+      .replace(/-/g, '+')
+      .replace(/_/g, '/')
+      .padEnd(Math.ceil(value.length / 4) * 4, '=');
+    return Uint8Array.from(atob(padded), (character) => character.charCodeAt(0));
+  };
+
+  const enable = async () => {
+    if (!supported) {
+      setMessage('Este navegador no admite notificaciones push.');
+      return;
+    }
+    if (!config.enabled || !config.publicKey) {
+      setMessage('Falta terminar la configuración privada de notificaciones.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        setMessage('El navegador no concedió permiso. Los avisos seguirán guardados aquí.');
+        return;
+      }
+      const registration = await navigator.serviceWorker.ready;
+      const subscription =
+        (await registration.pushManager.getSubscription()) ??
+        (await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: applicationServerKey(config.publicKey),
+        }));
+      await api.subscribeNotifications(subscription.toJSON());
+      setSubscribed(true);
+      setMessage('Avisos privados activados en este dispositivo.');
+    } catch (reason) {
+      setMessage(reason instanceof Error ? reason.message : 'No pudimos activar los avisos.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const disable = async () => {
+    setBusy(true);
+    try {
+      const subscription = await (
+        await navigator.serviceWorker.ready
+      ).pushManager.getSubscription();
+      if (subscription) {
+        await api.unsubscribeNotifications(subscription.endpoint);
+        await subscription.unsubscribe();
+      }
+      setSubscribed(false);
+      setMessage('Avisos push desactivados en este dispositivo.');
+    } catch (reason) {
+      setMessage(reason instanceof Error ? reason.message : 'No pudimos desactivar los avisos.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const test = async () => {
+    setBusy(true);
+    try {
+      await api.testNotification();
+      await refresh();
+      setMessage('Prueba enviada.');
+    } catch (reason) {
+      setMessage(reason instanceof Error ? reason.message : 'No pudimos enviar la prueba.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="admin-page">
+      <div className="admin-heading">
+        <div>
+          <span className="kicker">Centro de avisos</span>
+          <h1>Notificaciones privadas</h1>
+          <p>Recibe un aviso cuando llegue una nueva solicitud familiar.</p>
+        </div>
+      </div>
+      <section className="admin-notification-settings">
+        <div>
+          <strong>{subscribed ? 'Este dispositivo está activo' : 'Activa este dispositivo'}</strong>
+          <p className="muted-copy">
+            Los avisos del panel viajan por Supabase sin exponer tu homelab.
+          </p>
+        </div>
+        <div className="admin-notification-actions">
+          {subscribed ? (
+            <>
+              <Button disabled={busy} onClick={test}>
+                Enviar prueba
+              </Button>
+              <Button variant="ghost" disabled={busy} onClick={disable}>
+                Desactivar
+              </Button>
+            </>
+          ) : (
+            <Button disabled={busy || loading} onClick={enable}>
+              Activar notificaciones
+            </Button>
+          )}
+        </div>
+        {message && <p className="invite-message">{message}</p>}
+      </section>
+      <section className="admin-notification-list">
+        <h2>Historial</h2>
+        {!loading && items.length === 0 && <p className="muted-copy">Todavía no hay avisos.</p>}
+        {items.map((item) => (
+          <Link
+            className={
+              item.readAt
+                ? 'admin-notification-row'
+                : 'admin-notification-row admin-notification-row--unread'
+            }
+            key={item.id}
+            to={item.targetUrl}
+            onClick={() => {
+              if (!item.readAt) {
+                void api.markNotificationRead(item.id);
+                setItems((current) =>
+                  current.map((candidate) =>
+                    candidate.id === item.id
+                      ? { ...candidate, readAt: new Date().toISOString() }
+                      : candidate,
+                  ),
+                );
+              }
+            }}
+          >
+            <span />
+            <div>
+              <strong>{item.title}</strong>
+              <p>{item.body}</p>
+              <small>{formatDate(item.createdAt)}</small>
+            </div>
+          </Link>
+        ))}
+      </section>
     </div>
   );
 }

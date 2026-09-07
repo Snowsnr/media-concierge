@@ -113,3 +113,16 @@ test('the administrator can create and revoke a one-time invitation', async ({ p
   await page.getByRole('button', { name: 'Revocar' }).click();
   await expect(page.getByText('No hay invitaciones remotas.')).toBeVisible();
 });
+
+test('notification centers keep an in-app fallback when push is unavailable', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('concierge-family-name', 'Ana'));
+  await page.goto('/notificaciones');
+  await expect(page.getByRole('heading', { name: 'Entérate cuando esté lista' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Tus avisos' })).toBeVisible();
+  await page.getByRole('button', { name: 'Activar notificaciones' }).click();
+  await expect(page.getByText(/avisos push todavía no están disponibles/i)).toBeVisible();
+
+  await page.goto(`${adminUrl}/avisos`);
+  await expect(page.getByRole('heading', { name: 'Notificaciones privadas' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Historial' })).toBeVisible();
+});

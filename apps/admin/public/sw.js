@@ -1,4 +1,4 @@
-const CACHE = 'media-concierge-shell-v3';
+const CACHE = 'media-concierge-admin-v1';
 const SHELL = ['/', '/manifest.webmanifest', '/icon-192.png'];
 
 self.addEventListener('install', (event) => {
@@ -33,9 +33,9 @@ self.addEventListener('fetch', (event) => {
 self.addEventListener('push', (event) => {
   let data = {
     title: 'Media Concierge',
-    body: 'Tu solicitud cambió.',
-    url: '/notificaciones',
-    tag: 'media-concierge',
+    body: 'Llegó una nueva solicitud.',
+    url: '/',
+    tag: 'admin',
   };
   try {
     data = { ...data, ...(event.data?.json() ?? {}) };
@@ -43,23 +43,19 @@ self.addEventListener('push', (event) => {
     data.body = event.data?.text() ?? data.body;
   }
   event.waitUntil(
-    Promise.all([
-      self.registration.showNotification(data.title, {
-        body: data.body,
-        icon: '/icon-192.png',
-        badge: '/icon-192.png',
-        tag: data.tag,
-        data: { url: data.url },
-      }),
-      self.navigator?.setAppBadge?.(1),
-    ]),
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      icon: '/icon-192.png',
+      badge: '/icon-192.png',
+      tag: data.tag,
+      data: { url: data.url },
+    }),
   );
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const target = new URL(event.notification.data?.url ?? '/notificaciones', self.location.origin)
-    .href;
+  const target = new URL(event.notification.data?.url ?? '/', self.location.origin).href;
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (clients) => {
       const existing = clients.find(

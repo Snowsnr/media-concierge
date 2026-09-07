@@ -1,14 +1,13 @@
 {
   "id": "/",
-  "name": "Media Concierge",
-  "short_name": "Concierge",
-  "description": "Solicitudes familiares de películas y series.",
+  "name": "Media Concierge Admin",
+  "short_name": "Concierge Admin",
+  "description": "Panel privado del homelab para Media Concierge.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#100d1c",
-  "theme_color": "#100d1c",
-  "categories": ["entertainment", "lifestyle"],
+  "background_color": "#f5f2eb",
+  "theme_color": "#201d28",
   "icons": [
     {
       "src": "/icon-192.png",

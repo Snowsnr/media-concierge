@@ -1,6 +1,7 @@
 {
   "version": "5",
   "specifiers": {
+    "jsr:@daaku/webpush@0.2.0": "0.2.0",
     "jsr:@supabase/supabase-js@2": "2.114.0",
     "npm:@eslint/js@^9.20.0": "9.39.5",
     "npm:@fastify/cors@11": "11.3.0",
@@ -31,6 +32,9 @@
     "npm:zod@^3.24.2": "3.25.76"
   },
   "jsr": {
+    "@daaku/webpush@0.2.0": {
+      "integrity": "d2508fdcef2fd7ddb06e95cc1ccd81de1c82f483bab69567baa69ea5f697e757"
+    },
     "@supabase/supabase-js@2.114.0": {
       "integrity": "88a6205ef8691db7db4675e838d6ac023e4a077759b7d30274faf82978126f5b",
       "dependencies": [

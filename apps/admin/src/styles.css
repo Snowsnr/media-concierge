@@ -1047,6 +1047,67 @@ button {
   color: var(--ink);
   background: #fff;
 }
+.admin-notification-settings,
+.admin-notification-list {
+  padding: 22px;
+  margin-bottom: 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper);
+}
+.admin-notification-settings {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 16px;
+}
+.admin-notification-settings p {
+  margin: 6px 0 0;
+}
+.admin-notification-actions {
+  display: flex;
+  gap: 8px;
+}
+.admin-notification-settings .invite-message {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+.admin-notification-list h2 {
+  margin-top: 0;
+  font-size: 17px;
+}
+.admin-notification-row {
+  display: grid;
+  grid-template-columns: 8px 1fr;
+  gap: 12px;
+  padding: 15px 8px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+}
+.admin-notification-row:last-child {
+  border-bottom: 0;
+}
+.admin-notification-row > span {
+  width: 7px;
+  height: 7px;
+  margin-top: 5px;
+  border-radius: 50%;
+}
+.admin-notification-row--unread {
+  color: var(--ink);
+  background: #fbf9f4;
+}
+.admin-notification-row--unread > span {
+  background: var(--orange);
+}
+.admin-notification-row p {
+  margin: 5px 0;
+  font-size: 12px;
+}
+.admin-notification-row small {
+  color: var(--muted);
+  font-size: 9px;
+}
 
 @media (max-width: 900px) {
   .admin-shell {
@@ -1108,7 +1169,7 @@ button {
   }
   .sidebar nav {
     width: 100%;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
   }
   .sidebar nav a {
     padding: 8px;
@@ -1156,6 +1217,9 @@ button {
   }
   .account-row,
   .password-reset-row {
+    grid-template-columns: 1fr;
+  }
+  .admin-notification-settings {
     grid-template-columns: 1fr;
   }
 }

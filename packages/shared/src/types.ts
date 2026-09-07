@@ -163,6 +163,25 @@ export interface FamilyAccountSummary {
   revokedAt: string | null;
 }
 
+export type NotificationKind =
+  'NEW_REQUEST' | 'APPROVED' | 'NEEDS_INFO' | 'READY' | 'REJECTED' | 'FAILED' | 'TEST';
+
+export interface AppNotification {
+  id: string;
+  requestId: string | null;
+  kind: NotificationKind;
+  title: string;
+  body: string;
+  targetUrl: string;
+  readAt: string | null;
+  createdAt: string;
+}
+
+export interface NotificationConfig {
+  enabled: boolean;
+  publicKey: string;
+}
+
 export interface ReleaseScoreReason {
   points: number;
   label: string;

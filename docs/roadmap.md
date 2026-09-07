@@ -17,9 +17,9 @@ No real service credentials are required by Phase 1.
 
 Supabase migrations, Row Level Security, one-time account invitations, revocation, username/password family access, bilingual TMDB search, server-validated request creation, rate limiting, and idempotent outbound polling are implemented. Existing anonymous family sessions can be upgraded in place without losing requests. The private admin can create and revoke invitations, list family accounts, and reset passwords. GitHub Pages publishes only the family portal; the administration surface and outbound broker stay in the homelab. No ARR control exists yet.
 
-## Phase 3 — notifications
+## Phase 3 — notifications (deployed)
 
-Complete installability, VAPID subscription lifecycle, admin alerts, meaningful family notifications, and in-app fallback. Do not notify for every progress update.
+Installability, VAPID subscription lifecycle, admin alerts, meaningful family notifications, durable delivery retries, and an in-app fallback are implemented. Family devices receive approval, clarification, ready, rejection, and failure events; admin devices receive new-request alerts. Intermediate progress does not create notification spam.
 
 ## Phases 4–7 — movie workflow
 

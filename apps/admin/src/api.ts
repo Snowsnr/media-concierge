@@ -1,10 +1,12 @@
 import type {
   DownloadControlAction,
+  AppNotification,
   CreatedInvitation,
   FamilyAccountSummary,
   HealthCheck,
   InvitationSummary,
   MediaRequest,
+  NotificationConfig,
   ReleaseCandidate,
   SubtitleCandidate,
 } from '@media-concierge/shared';
@@ -61,4 +63,15 @@ export const api = {
   familyAccounts: () => request<FamilyAccountSummary[]>('/api/family-accounts'),
   resetFamilyPassword: (id: string, password: string) =>
     post<{ reset: boolean }>(`/api/family-accounts/${id}/reset-password`, { password }),
+  notificationConfig: () => request<NotificationConfig>('/api/notifications/config'),
+  notifications: () => request<AppNotification[]>('/api/notifications'),
+  subscribeNotifications: (subscription: PushSubscriptionJSON) =>
+    post<{ subscribed: boolean }>('/api/notifications/subscribe', {
+      subscription,
+      userAgent: navigator.userAgent,
+    }),
+  unsubscribeNotifications: (endpoint: string) =>
+    post<{ subscribed: boolean }>('/api/notifications/unsubscribe', { endpoint }),
+  testNotification: () => post<{ queued: boolean }>('/api/notifications/test'),
+  markNotificationRead: (id: string) => post<{ read: boolean }>(`/api/notifications/${id}/read`),
 };

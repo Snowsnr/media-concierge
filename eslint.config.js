@@ -33,7 +33,7 @@ export default tseslint.config(
     languageOptions: { globals: globals.serviceworker },
   },
   {
-    files: ['tests/integration/**/*.mjs'],
+    files: ['tests/integration/**/*.mjs', 'scripts/**/*.mjs'],
     languageOptions: { globals: globals.node },
   },
 );

@@ -1,8 +1,10 @@
 import { createClient } from '@supabase/supabase-js';
 import {
   publicStatusLabel,
+  type AppNotification,
   type FamilyRequest,
   type MediaMetadata,
+  type NotificationConfig,
   type PublicStatusCode,
   type SeriesScope,
 } from '@media-concierge/shared';
@@ -220,7 +222,24 @@ export const api = {
     return profile;
   },
   exit: async () => {
-    if (supabase) await supabase.auth.signOut();
+    if (supabase) {
+      if ('serviceWorker' in navigator && 'PushManager' in window) {
+        const subscription = await (
+          await navigator.serviceWorker.ready
+        ).pushManager
+          .getSubscription()
+          .catch(() => null);
+        if (subscription) {
+          await supabase.functions
+            .invoke('notifications', {
+              body: { action: 'unsubscribe', endpoint: subscription.endpoint },
+            })
+            .catch(() => undefined);
+          await subscription.unsubscribe().catch(() => false);
+        }
+      }
+      await supabase.auth.signOut();
+    }
     localStorage.removeItem('concierge-family-name');
   },
   search: async (query: string) => {
@@ -294,5 +313,58 @@ export const api = {
     });
     if (error || !data) throw new Error('No pudimos guardar tu solicitud.');
     return mapRow(data, input.requesterName);
+  },
+  notificationConfig: async (): Promise<NotificationConfig> => {
+    if (!supabase) return { enabled: false, publicKey: '' };
+    const { data, error } = await supabase.functions.invoke<NotificationConfig>('notifications', {
+      body: { action: 'config' },
+    });
+    if (error || !data) return { enabled: false, publicKey: '' };
+    return data;
+  },
+  notifications: async (): Promise<AppNotification[]> => {
+    if (!supabase) return [];
+    const { data, error } = await supabase.functions.invoke<AppNotification[]>('notifications', {
+      body: { action: 'list' },
+    });
+    if (error) throw new Error(await functionErrorMessage(error, 'No pudimos cargar tus avisos.'));
+    return data ?? [];
+  },
+  subscribeNotifications: async (subscription: PushSubscriptionJSON) => {
+    if (!supabase) return { subscribed: false };
+    const { data, error } = await supabase.functions.invoke<{ subscribed: boolean }>(
+      'notifications',
+      {
+        body: { action: 'subscribe', subscription, userAgent: navigator.userAgent },
+      },
+    );
+    if (error) throw new Error(await functionErrorMessage(error, 'No pudimos activar los avisos.'));
+    return data ?? { subscribed: false };
+  },
+  unsubscribeNotifications: async (endpoint: string) => {
+    if (!supabase) return { subscribed: false };
+    const { data, error } = await supabase.functions.invoke<{ subscribed: boolean }>(
+      'notifications',
+      { body: { action: 'unsubscribe', endpoint } },
+    );
+    if (error)
+      throw new Error(await functionErrorMessage(error, 'No pudimos desactivar los avisos.'));
+    return data ?? { subscribed: false };
+  },
+  markNotificationRead: async (notificationId: string) => {
+    if (!supabase) return { read: true };
+    const { data, error } = await supabase.functions.invoke<{ read: boolean }>('notifications', {
+      body: { action: 'read', notificationId },
+    });
+    if (error) throw new Error(await functionErrorMessage(error, 'No pudimos abrir el aviso.'));
+    return data ?? { read: true };
+  },
+  testNotification: async () => {
+    if (!supabase) return { queued: false };
+    const { data, error } = await supabase.functions.invoke<{ queued: boolean }>('notifications', {
+      body: { action: 'test' },
+    });
+    if (error) throw new Error(await functionErrorMessage(error, 'No pudimos enviar la prueba.'));
+    return data ?? { queued: false };
   },
 };

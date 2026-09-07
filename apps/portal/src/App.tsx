@@ -1,6 +1,12 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, NavLink, Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom';
-import type { FamilyRequest, MediaMetadata, SeriesScope } from '@media-concierge/shared';
+import type {
+  AppNotification,
+  FamilyRequest,
+  MediaMetadata,
+  NotificationConfig,
+  SeriesScope,
+} from '@media-concierge/shared';
 import { Button, EmptyState, StatusPill } from '@media-concierge/ui';
 import { api, type FamilyProfile } from './api';
 
@@ -739,19 +745,146 @@ function familyEpisodeLabel(
 }
 
 function NotificationsPage() {
+  const [config, setConfig] = useState<NotificationConfig>({ enabled: false, publicKey: '' });
+  const [items, setItems] = useState<AppNotification[]>([]);
+  const [subscribed, setSubscribed] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+
+  const supported =
+    'Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window;
+  const ios = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const standalone =
+    window.matchMedia('(display-mode: standalone)').matches ||
+    Boolean((navigator as Navigator & { standalone?: boolean }).standalone);
+
+  const refresh = async () => {
+    const notifications = await api.notifications();
+    setItems(notifications);
+  };
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        const nextConfig = await api.notificationConfig();
+        const existing = supported
+          ? await (await navigator.serviceWorker.ready).pushManager.getSubscription()
+          : null;
+        if (existing && nextConfig.enabled && Notification.permission === 'granted') {
+          await api.subscribeNotifications(existing.toJSON());
+        }
+        const notifications = await api.notifications();
+        if (active) {
+          setConfig(nextConfig);
+          setSubscribed(Boolean(existing));
+          setItems(notifications);
+          void (navigator as Navigator & { clearAppBadge?: () => Promise<void> }).clearAppBadge?.();
+        }
+      } catch (reason) {
+        if (active)
+          setMessage(reason instanceof Error ? reason.message : 'No pudimos cargar tus avisos.');
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    void load();
+    const interval = window.setInterval(() => void refresh().catch(() => undefined), 15_000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, []);
+
+  const applicationServerKey = (value: string) => {
+    const padded = value
+      .replace(/-/g, '+')
+      .replace(/_/g, '/')
+      .padEnd(Math.ceil(value.length / 4) * 4, '=');
+    return Uint8Array.from(atob(padded), (character) => character.charCodeAt(0));
+  };
+
   const enable = async () => {
-    if (!('Notification' in window)) {
+    if (!supported) {
       setMessage('Este navegador no admite notificaciones.');
       return;
     }
-    const permission = await Notification.requestPermission();
-    setMessage(
-      permission === 'granted'
-        ? 'Listo. En producción recibirás solo avisos importantes.'
-        : 'No pasa nada: tus estados siempre estarán en Mis pedidos.',
-    );
+    if (ios && !standalone) {
+      setMessage('En iPhone, primero usa Compartir → Añadir a pantalla de inicio y abre esa app.');
+      return;
+    }
+    if (!config.enabled || !config.publicKey) {
+      setMessage('Los avisos push todavía no están disponibles. Tus avisos dentro de la app sí.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        setMessage('No pasa nada: tus avisos siempre estarán guardados aquí.');
+        return;
+      }
+      const registration = await navigator.serviceWorker.ready;
+      const subscription =
+        (await registration.pushManager.getSubscription()) ??
+        (await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: applicationServerKey(config.publicKey),
+        }));
+      await api.subscribeNotifications(subscription.toJSON());
+      setSubscribed(true);
+      setMessage('Listo. Recibirás solo avisos importantes.');
+    } catch (reason) {
+      setMessage(reason instanceof Error ? reason.message : 'No pudimos activar los avisos.');
+    } finally {
+      setBusy(false);
+    }
   };
+
+  const disable = async () => {
+    setBusy(true);
+    try {
+      const subscription = await (
+        await navigator.serviceWorker.ready
+      ).pushManager.getSubscription();
+      if (subscription) {
+        await api.unsubscribeNotifications(subscription.endpoint);
+        await subscription.unsubscribe();
+      }
+      setSubscribed(false);
+      setMessage('Avisos push desactivados. El historial seguirá disponible aquí.');
+    } catch (reason) {
+      setMessage(reason instanceof Error ? reason.message : 'No pudimos desactivar los avisos.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const test = async () => {
+    setBusy(true);
+    try {
+      await api.testNotification();
+      await refresh();
+      setMessage('Prueba enviada. Puede tardar unos segundos.');
+    } catch (reason) {
+      setMessage(reason instanceof Error ? reason.message : 'No pudimos enviar la prueba.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const openNotification = async (item: AppNotification) => {
+    if (!item.readAt) {
+      await api.markNotificationRead(item.id).catch(() => undefined);
+      setItems((current) =>
+        current.map((candidate) =>
+          candidate.id === item.id ? { ...candidate, readAt: new Date().toISOString() } : candidate,
+        ),
+      );
+    }
+  };
+
   return (
     <div className="page notification-page">
       <div className="notification-illustration">
@@ -762,9 +895,50 @@ function NotificationsPage() {
       <p>
         Te avisaremos cuando tu solicitud sea aprobada, necesite información o ya esté disponible.
       </p>
-      <Button onClick={enable}>Activar notificaciones</Button>
+      <div className="notification-actions">
+        {subscribed ? (
+          <>
+            <Button disabled={busy} onClick={test}>
+              Enviar prueba
+            </Button>
+            <Button variant="ghost" disabled={busy} onClick={disable}>
+              Desactivar
+            </Button>
+          </>
+        ) : (
+          <Button disabled={busy || loading} onClick={enable}>
+            Activar notificaciones
+          </Button>
+        )}
+      </div>
       {message && <p className="notice">{message}</p>}
       <small>En iPhone, primero añade esta app a tu pantalla de inicio.</small>
+      <section className="notification-list" aria-live="polite">
+        <div className="notification-list__heading">
+          <h2>Tus avisos</h2>
+          {items.some((item) => !item.readAt) && <span>Hay novedades</span>}
+        </div>
+        {!loading && items.length === 0 && (
+          <p className="notification-empty">Todavía no hay avisos.</p>
+        )}
+        {items.map((item) => (
+          <Link
+            className={
+              item.readAt ? 'notification-item' : 'notification-item notification-item--unread'
+            }
+            key={item.id}
+            to={item.targetUrl}
+            onClick={() => void openNotification(item)}
+          >
+            <span className="notification-item__dot" />
+            <div>
+              <strong>{item.title}</strong>
+              <p>{item.body}</p>
+              <time>{formatDate(item.createdAt)}</time>
+            </div>
+          </Link>
+        ))}
+      </section>
     </div>
   );
 }

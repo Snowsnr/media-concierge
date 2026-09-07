@@ -1,4 +1,5 @@
 import { handleOptions, json, safeError } from '../_shared/http.ts';
+import { enqueueNotification } from '../_shared/push.ts';
 import { activeFamilyMember, adminClient } from '../_shared/supabase.ts';
 
 type MediaType = 'movie' | 'series';
@@ -159,6 +160,24 @@ Deno.serve(async (request) => {
       .eq('id', inserted.id)
       .single();
     if (readError) return safeError(request, 500, 'No se pudo confirmar la solicitud.');
+    try {
+      await enqueueNotification({
+        audience: 'admin',
+        requestId: inserted.id,
+        kind: 'NEW_REQUEST',
+        title: 'Nueva solicitud familiar',
+        body: `${member.display_name} pidió ${localizedTitle}.`,
+        targetUrl: '/',
+        dedupeKey: `admin:new-request:${inserted.id}`,
+      });
+    } catch (notificationError) {
+      console.error('new request notification failed', {
+        message:
+          notificationError instanceof Error
+            ? notificationError.message
+            : 'Unknown notification error',
+      });
+    }
     return json(request, created, 201);
   } catch {
     return safeError(request, 502, 'TMDB no respondió. Intenta nuevamente.');

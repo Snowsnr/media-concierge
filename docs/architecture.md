@@ -10,11 +10,13 @@ Media Concierge has three zones:
 
 The mandatory control path is `family → portal → pending broker row → outbound homelab sync → administrator approval → ARR adapter`. A public request is data, never authorization to download.
 
-## Local and Phase 2 topology
+## Local and public topology
 
 Without Phase 2 variables, three local processes run in mock mode. Both React applications call the Fastify API, which stores requests and history in SQLite and calls deterministic adapters from `packages/integrations`.
 
-With Phase 2 variables, the family portal uses Supabase Auth, RLS-protected reads, and five Edge Functions. Search and creation are validated server-side; the browser never receives the TMDB token or a privileged Supabase key. The private Fastify API polls Supabase over outbound HTTPS, deduplicates each public UUID in SQLite, and publishes sanitized state back to the family's row. Supabase cannot initiate a connection to the homelab.
+With public-service variables, the family portal uses Supabase Auth, RLS-protected reads, and Edge Functions. Search and creation are validated server-side; the browser never receives the TMDB token or a privileged Supabase key. The private Fastify API polls Supabase over outbound HTTPS, deduplicates each public UUID in SQLite, and publishes sanitized state back to the family's row. Supabase cannot initiate a connection to the homelab.
+
+Supabase also owns the public-safe notification outbox and Web Push delivery records. VAPID signing happens only inside Edge Functions. Family subscriptions are bound to the authenticated member; admin subscriptions are created only through the bridge-authenticated private API. Delivery retries are durable and expired browser subscriptions are removed automatically. Both PWAs retain an in-app notification history when push permission or platform support is unavailable.
 
 The state machine lives in `packages/shared`, separate from transport and adapters. Every transition is validated and appended to an audit history. Request creation accepts an idempotency key, enforced by a unique SQLite index. Series add a persisted episode matrix; several episodes may reference the same simulated season-pack download group while retaining individual subtitle and readiness state.
 

@@ -21,8 +21,10 @@ import {
   subtitleSelectionSchema,
   toFamilyRequest,
   type CreatedInvitation,
+  type AppNotification,
   type FamilyAccountSummary,
   type InvitationSummary,
+  type NotificationConfig,
 } from '@media-concierge/shared';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
@@ -58,6 +60,20 @@ const broker = brokerConfigured
     })
   : new MockPublicBroker();
 const push = new MockPushProvider();
+
+const publishPublicStatus = async <T extends ReturnType<RequestRepository['get']>>(item: T) => {
+  if (item) {
+    try {
+      await broker.publishStatus(item);
+    } catch (error) {
+      app.log.warn(
+        { err: { message: error instanceof Error ? error.message : 'Broker publish failed' } },
+        'Immediate public status publish failed; periodic sync will retry',
+      );
+    }
+  }
+  return item;
+};
 
 const requestParams = z.object({ id: z.string().uuid() });
 const selectionBody = z.object({ candidateId: z.string().min(1).max(200) });
@@ -162,22 +178,27 @@ app.post('/api/requests/:id/decision', async (request) => {
   const { id } = requestParams.parse(request.params);
   const decision = adminDecisionSchema.parse(request.body);
   if (decision.action === 'reject') {
-    return repository.transition(id, 'REJECTED', 'admin', decision.note || 'Solicitud rechazada.');
-  }
-  if (decision.action === 'clarify') {
-    return repository.transition(
-      id,
-      'NEEDS_CLARIFICATION',
-      'admin',
-      decision.note || 'El administrador necesita más información.',
+    return publishPublicStatus(
+      repository.transition(id, 'REJECTED', 'admin', decision.note || 'Solicitud rechazada.'),
     );
   }
-  repository.transition(
+  if (decision.action === 'clarify') {
+    return publishPublicStatus(
+      repository.transition(
+        id,
+        'NEEDS_CLARIFICATION',
+        'admin',
+        decision.note || 'El administrador necesita más información.',
+      ),
+    );
+  }
+  const approved = repository.transition(
     id,
     'APPROVED',
     'admin',
     decision.note || 'Solicitud aprobada manualmente.',
   );
+  await publishPublicStatus(approved);
   repository.transition(id, 'ADDING_TO_ARR', 'system', 'Simulando alta segura en Radarr o Sonarr.');
   return repository.transition(
     id,
@@ -231,11 +252,13 @@ app.post('/api/requests/:id/advance', async (request) => {
     }
     if (item.mockScenario === 'download-error') {
       repository.setAllAiredEpisodeStates(id, 'FAILED');
-      return repository.transition(
-        id,
-        'FAILED',
-        'system',
-        'Simulación: el cliente reportó archivos faltantes.',
+      return publishPublicStatus(
+        repository.transition(
+          id,
+          'FAILED',
+          'system',
+          'Simulación: el cliente reportó archivos faltantes.',
+        ),
       );
     }
     item = repository.setProgress(id, item.progress + 25);
@@ -307,11 +330,8 @@ app.post('/api/requests/:id/verify', async (request) => {
   }
   const available = await mediaServer.isAvailable(item);
   if (!available) return item;
-  return repository.transition(
-    id,
-    'READY',
-    'system',
-    'Disponibilidad simulada confirmada en Jellyfin.',
+  return publishPublicStatus(
+    repository.transition(id, 'READY', 'system', 'Disponibilidad simulada confirmada en Jellyfin.'),
   );
 });
 
@@ -428,10 +448,10 @@ const syncPublicBroker = async () => {
 
 app.post('/api/broker/sync', async () => syncPublicBroker());
 
-const invitationFunction = async <T>(body: unknown): Promise<T> => {
+const edgeFunction = async <T>(name: string, body: unknown): Promise<T> => {
   if (!brokerConfigured) throw new Error('Supabase broker is not configured');
   const response = await fetch(
-    `${process.env.SUPABASE_URL!.replace(/\/$/, '')}/functions/v1/invitations`,
+    `${process.env.SUPABASE_URL!.replace(/\/$/, '')}/functions/v1/${name}`,
     {
       method: 'POST',
       headers: {
@@ -442,9 +462,15 @@ const invitationFunction = async <T>(body: unknown): Promise<T> => {
       signal: AbortSignal.timeout(6_000),
     },
   );
-  if (!response.ok) throw new Error(`Invitation service returned ${response.status}`);
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+    throw new Error(payload?.message ?? `${name} service returned ${response.status}`);
+  }
   return response.json() as Promise<T>;
 };
+
+const invitationFunction = <T>(body: unknown) => edgeFunction<T>('invitations', body);
+const notificationFunction = <T>(body: unknown) => edgeFunction<T>('notifications', body);
 
 const mapInvitation = (row: Record<string, unknown>): InvitationSummary => ({
   id: String(row.id),
@@ -507,6 +533,50 @@ app.post('/api/family-accounts/:id/reset-password', async (request) => {
   const { password } = resetFamilyPasswordBody.parse(request.body);
   if (!brokerConfigured) return { reset: true, mode: 'mock' };
   return invitationFunction({ action: 'reset-password', userId: id, password });
+});
+
+app.get('/api/notifications/config', async () => {
+  if (!brokerConfigured) return { enabled: false, publicKey: '' } satisfies NotificationConfig;
+  return notificationFunction<NotificationConfig>({ action: 'config' });
+});
+
+app.get('/api/notifications', async () => {
+  if (!brokerConfigured) return [] satisfies AppNotification[];
+  return notificationFunction<AppNotification[]>({ action: 'admin-list' });
+});
+
+const pushSubscriptionBody = z.object({
+  subscription: z.object({
+    endpoint: z.string().url().startsWith('https://').max(2048),
+    keys: z.object({
+      p256dh: z.string().min(40).max(256),
+      auth: z.string().min(16).max(128),
+    }),
+  }),
+  userAgent: z.string().max(500).default(''),
+});
+
+app.post('/api/notifications/subscribe', async (request) => {
+  if (!brokerConfigured) return { subscribed: false, mode: 'mock' };
+  const input = pushSubscriptionBody.parse(request.body);
+  return notificationFunction({ action: 'admin-subscribe', ...input });
+});
+
+app.post('/api/notifications/unsubscribe', async (request) => {
+  if (!brokerConfigured) return { subscribed: false, mode: 'mock' };
+  const input = z.object({ endpoint: z.string().url().max(2048) }).parse(request.body);
+  return notificationFunction({ action: 'admin-unsubscribe', ...input });
+});
+
+app.post('/api/notifications/test', async () => {
+  if (!brokerConfigured) return { queued: false, mode: 'mock' };
+  return notificationFunction({ action: 'admin-test' });
+});
+
+app.post('/api/notifications/:id/read', async (request) => {
+  const { id } = requestParams.parse(request.params);
+  if (!brokerConfigured) return { read: true, mode: 'mock' };
+  return notificationFunction({ action: 'admin-read', notificationId: id });
 });
 
 app.setErrorHandler((error, _request, reply) => {

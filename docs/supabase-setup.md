@@ -1,6 +1,6 @@
-# Phase 2 setup: Supabase, TMDB, and GitHub Pages
+# Phase 2–3 setup: Supabase, TMDB, notifications, and GitHub Pages
 
-Phase 2 is implemented but remains disabled until configuration is supplied. Without the variables below, `npm run dev` continues to use the safe local mocks.
+The public integration remains disabled until configuration is supplied. Without the variables below, `npm run dev` continues to use the safe local mocks.
 
 ## 1. Create the Supabase project
 
@@ -23,7 +23,16 @@ supabase secrets set HOMELAB_BRIDGE_TOKEN=YOUR_LONG_RANDOM_BRIDGE_TOKEN
 supabase secrets set PUBLIC_PORTAL_ORIGIN=https://pedidos.diegohomelab.fyi
 ```
 
-Deploy the six functions:
+Generate the VAPID signing key once, keep the ignored recovery file private, and upload it directly to Supabase:
+
+```bash
+npm run generate:vapid
+supabase secrets set --env-file .vapid-secrets.env
+```
+
+Do not regenerate this key during normal deployments: rotating it requires every browser to subscribe again.
+
+Deploy the seven functions:
 
 ```bash
 supabase functions deploy redeem-invite
@@ -32,9 +41,10 @@ supabase functions deploy tmdb-search
 supabase functions deploy create-request
 supabase functions deploy invitations --no-verify-jwt
 supabase functions deploy bridge-sync --no-verify-jwt
+supabase functions deploy notifications --no-verify-jwt
 ```
 
-Never place the TMDB token, service-role key, or bridge token in `VITE_*` variables.
+Never place the TMDB token, service-role key, bridge token, or VAPID private key in `VITE_*` variables.
 
 ## 3. Configure the private homelab process
 
@@ -91,11 +101,14 @@ npx supabase db lint --local --level warning
 npx supabase test db
 ```
 
-To run the HTTP integration suite, create an ignored local Edge environment whose `HOMELAB_BRIDGE_TOKEN` is `local-bridge-test-token-256-bits-not-production`, serve the functions in one terminal, and run the test in another:
+The HTTP integration suite starts its own local Edge Function watcher and injects a fixed non-production bridge token:
 
 ```bash
-npx supabase functions serve --env-file /path/to/local-functions.env
 npm run test:supabase
 ```
 
-The HTTP suite verifies invitation redemption/replay/revocation, RLS isolation, column permissions, bridge authentication, status publication, the real Fastify broker adapter, and the private invitation proxy. A successful TMDB search/request smoke test requires the real `TMDB_API_READ_TOKEN` and should be performed only after setting that secret in the hosted project.
+The HTTP suite verifies invitation redemption/replay/revocation, RLS isolation, column permissions, bridge authentication, status publication, in-app notification creation, the real Fastify broker adapter, and the private invitation proxy. A successful TMDB search/request smoke test requires the real `TMDB_API_READ_TOKEN` and should be performed only after setting that secret in the hosted project.
+
+## iPhone notification activation
+
+On iOS/iPadOS, open the family portal in Safari, use **Share → Add to Home Screen**, launch that installed web app, sign in, open **Avisos**, and tap **Activar notificaciones**. The permission prompt must originate from that button tap. Use **Enviar prueba** to confirm delivery before testing a full request.

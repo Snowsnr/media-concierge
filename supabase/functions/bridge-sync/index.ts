@@ -1,4 +1,9 @@
 import { handleOptions, json, safeError } from '../_shared/http.ts';
+import {
+  enqueueNotification,
+  schedulePendingDelivery,
+  type NotificationKind,
+} from '../_shared/push.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { bridgeAuthorized } from '../_shared/security.ts';
 
@@ -27,6 +32,29 @@ type BridgeRow = {
   family_members: { display_name: string } | Array<{ display_name: string }>;
 };
 
+const familyNotification = (
+  status: string,
+  title: string,
+  note: string,
+): { kind: NotificationKind; title: string; body: string } | null => {
+  if (status === 'APPROVED') {
+    return { kind: 'APPROVED', title: 'Solicitud aprobada', body: `${title} fue aprobada.` };
+  }
+  if (status === 'NEEDS_INFO') {
+    return { kind: 'NEEDS_INFO', title: 'Necesitamos un dato', body: note };
+  }
+  if (status === 'READY') {
+    return { kind: 'READY', title: 'Ya está disponible', body: `${title} ya está en Jellyfin.` };
+  }
+  if (status === 'REJECTED') {
+    return { kind: 'REJECTED', title: 'Solicitud rechazada', body: note };
+  }
+  if (status === 'FAILED') {
+    return { kind: 'FAILED', title: 'No pudimos completar la solicitud', body: note };
+  }
+  return null;
+};
+
 Deno.serve(async (request) => {
   const options = handleOptions(request);
   if (options) return options;
@@ -35,7 +63,10 @@ Deno.serve(async (request) => {
   const body = await request.json().catch(() => null);
   const admin = adminClient();
 
-  if (body?.action === 'health') return json(request, { status: 'ok' });
+  if (body?.action === 'health') {
+    schedulePendingDelivery();
+    return json(request, { status: 'ok' });
+  }
 
   if (body?.action === 'pull') {
     const { data, error } = await admin
@@ -53,6 +84,7 @@ Deno.serve(async (request) => {
     const ids = rows.map((item) => item.id);
     if (ids.length)
       await admin.from('public_requests').update({ bridge_claimed_at: now }).in('id', ids);
+    schedulePendingDelivery();
     return json(
       request,
       rows.map((item) => ({
@@ -85,7 +117,7 @@ Deno.serve(async (request) => {
     }
     const { data: current } = await admin
       .from('public_requests')
-      .select('public_status')
+      .select('public_status, requester_id, localized_title')
       .eq('id', requestId)
       .maybeSingle();
     const { error } = await admin
@@ -103,7 +135,35 @@ Deno.serve(async (request) => {
         public_status: status,
         note,
       });
+      const inferredApproval =
+        status === 'PREPARING' &&
+        (current?.public_status === 'PENDING' || current?.public_status === 'NEEDS_INFO');
+      const notification = familyNotification(
+        inferredApproval ? 'APPROVED' : status,
+        current?.localized_title ?? 'Tu solicitud',
+        note,
+      );
+      if (notification && current?.requester_id) {
+        try {
+          await enqueueNotification({
+            audience: 'family',
+            recipientUserId: current.requester_id,
+            requestId,
+            ...notification,
+            targetUrl: `/solicitudes/${requestId}`,
+            dedupeKey: `family:${requestId}:${notification.kind}`,
+          });
+        } catch (notificationError) {
+          console.error('family notification failed', {
+            message:
+              notificationError instanceof Error
+                ? notificationError.message
+                : 'Unknown notification error',
+          });
+        }
+      }
     }
+    schedulePendingDelivery();
     return json(request, { updated: true });
   }
 

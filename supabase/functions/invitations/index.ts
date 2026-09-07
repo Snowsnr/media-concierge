@@ -60,6 +60,11 @@ Deno.serve(async (request) => {
         .from('family_members')
         .update({ revoked_at: new Date().toISOString() })
         .eq('user_id', invitation.redeemed_by);
+      await admin
+        .from('push_subscriptions')
+        .delete()
+        .eq('audience', 'family')
+        .eq('user_id', invitation.redeemed_by);
     }
     return json(request, { revoked: true });
   }
