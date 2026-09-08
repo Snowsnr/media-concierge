@@ -2,7 +2,7 @@
 
 Media Concierge coordinates family movie and series requests with a private homelab while keeping the administrator in control. The public portal can only create requests; it can never start a download or reach private services.
 
-This repository contains **Phases 0–4** and the safe qBittorrent foundation for **Phase 5**. The complete simulated workflow still works without credentials, while the public portal, broker, accounts, and notifications can be activated with Supabase and TMDB configuration. Radarr and qBittorrent are opt-in and private; Sonarr, Bazarr, and Jellyfin remain simulated.
+This repository contains **Phases 0–5**, including validated private Radarr and qBittorrent integrations. The complete simulated workflow still works without credentials, while the public portal, broker, accounts, and notifications can be activated with Supabase and TMDB configuration. Radarr and qBittorrent are opt-in and private; Sonarr, Bazarr, and Jellyfin remain simulated.
 
 ## What works now
 
@@ -10,7 +10,7 @@ This repository contains **Phases 0–4** and the safe qBittorrent foundation fo
 - Private admin panel with approval, clarification, rejection, release scoring, simulated download controls, subtitle choice, Jellyfin verification, and audit timeline.
 - Series season packs, multi-episode releases, unaired episodes, and manual subtitle readiness per episode.
 - Failure laboratory for stalled/error downloads, delayed imports, missing subtitles, and delayed Jellyfin visibility.
-- Coordinated pause, resume, reannounce, release replacement, and confirmed cancellation simulations.
+- Coordinated pause, resume, reannounce, release replacement, and confirmed cancellation in simulated and real qBittorrent workflows.
 - Fastify API backed by local SQLite and deterministic mock adapters.
 - Strict shared contracts and a guarded, tested state machine.
 - Installable family and admin PWAs with Web Push, device subscription lifecycle, test notices, and in-app history.
