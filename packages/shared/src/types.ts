@@ -82,6 +82,7 @@ export interface MediaRequest {
   progress: number;
   selectedReleaseId: string | null;
   downloadId: string | null;
+  torrent: TorrentTelemetry | null;
   selectedSubtitleId: string | null;
   mockScenario: MockScenario;
   episodes: EpisodeProgress[];
@@ -252,6 +253,53 @@ export interface ArrQueueStatus {
   progress: number;
   downloadId: string | null;
   errorMessage: string | null;
+}
+
+export type TorrentActivityState =
+  | 'downloading'
+  | 'stalled'
+  | 'paused'
+  | 'completed'
+  | 'errored'
+  | 'checking'
+  | 'queued'
+  | 'unknown';
+
+export interface TorrentTrackerStatus {
+  host: string;
+  status: 'disabled' | 'pending' | 'working' | 'updating' | 'error' | 'unknown';
+  message: string | null;
+}
+
+export interface TorrentTelemetry {
+  hash: string;
+  name: string;
+  state: TorrentActivityState;
+  rawState: string;
+  progress: number;
+  totalBytes: number;
+  downloadedBytes: number;
+  remainingBytes: number;
+  downloadSpeedBytes: number;
+  etaSeconds: number | null;
+  seedsConnected: number;
+  seedsTotal: number;
+  peersConnected: number;
+  peersTotal: number;
+  availability: number | null;
+  ratio: number;
+  trackers: TorrentTrackerStatus[];
+  errorMessage: string | null;
+  updatedAt: string;
+}
+
+export interface TorrentConfiguration {
+  mode: 'mock' | 'qbittorrent';
+  configured: boolean;
+  version: string | null;
+  webApiVersion: string | null;
+  authMode: 'mock' | 'api-key' | 'credentials';
+  issues: string[];
 }
 
 export interface SubtitleCandidate {

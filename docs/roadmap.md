@@ -25,9 +25,13 @@ Installability, VAPID subscription lifecycle, admin alerts, meaningful family no
 
 The private API supports Radarr v3 health and configuration discovery, TMDB duplicate detection, safe movie creation with automatic search disabled, score-sorted interactive release results, explicit manual grab, and queue/import observation. Runtime response validation, bounded timeouts, redacted errors, contract tests, mock parity, and an explicitly authorized end-to-end homelab test are complete.
 
-## Phases 5–7 — remaining movie workflow
+## Phase 5 — qBittorrent (adapter ready; homelab validation pending)
 
-Introduce real adapters in order: qBittorrent observability and coordinated cancellation, manual Bazarr subtitle choice, then Jellyfin availability verification. Each adapter lands behind contract tests and mock parity before an explicitly authorized homelab smoke test.
+The private API now supports qBittorrent API-key and legacy session authentication, exact hash correlation, persisted progress/size/speed/ETA/seeds/peers/availability/ratio telemetry, sanitized tracker health, stalled/error detection, pause/resume/reannounce controls, and Radarr-coordinated cancellation with optional blocklisting and partial-data handling. Phase 5 closes only after explicitly authorized read-only and controlled-write homelab checks.
+
+## Phases 6–7 — remaining movie workflow
+
+Introduce real adapters in order: manual Bazarr subtitle choice, then Jellyfin availability verification. Each adapter lands behind contract tests and mock parity before an explicitly authorized homelab smoke test.
 
 ## Phase 8 — series
 

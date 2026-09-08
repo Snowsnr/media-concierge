@@ -2,7 +2,7 @@
 
 Media Concierge coordinates family movie and series requests with a private homelab while keeping the administrator in control. The public portal can only create requests; it can never start a download or reach private services.
 
-This repository contains **Phases 0–4**. The complete simulated workflow still works without credentials, while the public portal, broker, accounts, and notifications can be activated with Supabase and TMDB configuration. Radarr is opt-in and private; Sonarr, qBittorrent, Bazarr, and Jellyfin remain simulated.
+This repository contains **Phases 0–4** and the safe qBittorrent foundation for **Phase 5**. The complete simulated workflow still works without credentials, while the public portal, broker, accounts, and notifications can be activated with Supabase and TMDB configuration. Radarr and qBittorrent are opt-in and private; Sonarr, Bazarr, and Jellyfin remain simulated.
 
 ## What works now
 
@@ -20,6 +20,7 @@ This repository contains **Phases 0–4**. The complete simulated workflow still
 - Invitation, family-account, and password-reset management in the private admin panel.
 - Admin alerts for new requests and family alerts for approval, clarification, ready, rejection, and failure—never every progress update.
 - Opt-in Radarr v3 adapter with health/configuration checks, duplicate detection, add-without-search, interactive release inspection, explicit manual grab, and queue/import tracking.
+- Opt-in qBittorrent WebAPI adapter with API-key/session authentication, real telemetry, pause/resume/reannounce controls, tracker-passkey redaction, and Radarr-coordinated cancellation.
 - GitHub Pages workflow for publishing only the family portal at `pedidos.diegohomelab.fyi`.
 - Development Docker Compose file and architecture/security/roadmap documentation.
 
@@ -82,4 +83,4 @@ infrastructure/docker/      local development composition
 docs/                       architecture, security, roadmap
 ```
 
-Copy `.env.example` to `.env` only if you need to change local ports. Never commit `.env` files. To activate Phases 2–3, follow [docs/supabase-setup.md](docs/supabase-setup.md). To connect Radarr privately, follow [docs/radarr-setup.md](docs/radarr-setup.md). See also [docs/architecture.md](docs/architecture.md), [docs/security.md](docs/security.md), and [docs/roadmap.md](docs/roadmap.md).
+Copy `.env.example` to `.env` only if you need to change local ports. Never commit `.env` files. To activate Phases 2–3, follow [docs/supabase-setup.md](docs/supabase-setup.md). To connect private download services, follow [docs/radarr-setup.md](docs/radarr-setup.md) and [docs/qbittorrent-setup.md](docs/qbittorrent-setup.md). See also [docs/architecture.md](docs/architecture.md), [docs/security.md](docs/security.md), and [docs/roadmap.md](docs/roadmap.md).

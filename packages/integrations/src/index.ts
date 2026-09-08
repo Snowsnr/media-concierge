@@ -3,3 +3,4 @@ export * from './mock-data.js';
 export * from './mocks.js';
 export * from './supabase-broker.js';
 export * from './radarr.js';
+export * from './qbittorrent.js';

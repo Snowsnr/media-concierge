@@ -15,6 +15,7 @@ const requestFixture = (): MediaRequest => ({
   progress: 0,
   selectedReleaseId: null,
   downloadId: null,
+  torrent: null,
   selectedSubtitleId: null,
   mockScenario: 'none',
   episodes: [],
@@ -174,6 +175,7 @@ describe('RadarrClientV3', () => {
   });
 
   it('maps queue progress and returns redacted HTTP errors', async () => {
+    let removedUrl = '';
     const fetcher = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);
       if (url.includes('/movie?tmdbId='))
@@ -194,6 +196,10 @@ describe('RadarrClientV3', () => {
             },
           ],
         });
+      if (url.includes('/queue/7?')) {
+        removedUrl = url;
+        return new Response(null, { status: 200 });
+      }
       throw new Error(`Unexpected URL: ${url}`);
     }) as typeof fetch;
     const client = new RadarrClientV3({
@@ -205,6 +211,12 @@ describe('RadarrClientV3', () => {
       progress: 75,
       downloadId: 'ABC123',
     });
+    await expect(
+      client.removeFromQueue(945961, { removeFromClient: true, blocklist: true }),
+    ).resolves.toBe(true);
+    expect(removedUrl).toContain('removeFromClient=true');
+    expect(removedUrl).toContain('blocklist=true');
+    expect(removedUrl).toContain('skipRedownload=true');
 
     const failing = new RadarrClientV3({
       baseUrl: 'http://radarr:7878',

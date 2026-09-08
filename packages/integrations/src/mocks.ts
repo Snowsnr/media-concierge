@@ -91,14 +91,30 @@ export class MockArrClient implements RadarrClient, SonarrClient {
   async queue(_tmdbId: number) {
     return null;
   }
+  async removeFromQueue(
+    _tmdbId: number,
+    _options: { removeFromClient: boolean; blocklist: boolean },
+  ) {
+    return true;
+  }
 }
 
 export class MockTorrentClient implements TorrentClient {
   async health() {
     return mockHealth('qBittorrent');
   }
-  async getProgress(_downloadId: string) {
-    return { progress: 0, state: 'mock' };
+  async configuration() {
+    return {
+      mode: 'mock' as const,
+      configured: false,
+      version: null,
+      webApiVersion: null,
+      authMode: 'mock' as const,
+      issues: ['Adaptador simulado; no hay conexión externa.'],
+    };
+  }
+  async status(_downloadId: string) {
+    return null;
   }
   async pause(_downloadId: string) {}
   async resume(_downloadId: string) {}

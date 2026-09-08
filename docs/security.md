@@ -29,7 +29,7 @@ All inputs are parsed through shared schemas. React escapes release names by def
 
 ## Development safety
 
-Torrent, subtitle, media-server, Sonarr, and local push adapters are mocks and perform no network calls. The optional Supabase broker and Radarr adapter are disabled unless their complete private connection pair is supplied. The repository contains no credentials. Radarr receives no automatic-search instruction: adding a movie and selecting a release remain separate actions. Real integration tests must be opt-in, clearly named, and require explicit administrator authorization. They must never delete production data as part of an automated suite.
+Subtitle, media-server, Sonarr, and local push adapters are mocks and perform no network calls. The optional Supabase broker, Radarr, and qBittorrent adapters are disabled unless their private connection variables are supplied. The repository contains no credentials. Radarr receives no automatic-search instruction: adding a movie and selecting a release remain separate actions. qBittorrent control is restricted to one validated hash; tracker paths/passkeys are redacted; and destructive removal is coordinated through Radarr rather than sent directly to qBittorrent. Real integration tests must be opt-in, clearly named, and require explicit administrator authorization. They must never delete production data as part of an automated suite.
 
 ## Threat review for private integrations
 

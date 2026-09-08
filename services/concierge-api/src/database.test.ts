@@ -42,6 +42,27 @@ describe('RequestRepository', () => {
     const request = firstRepository.list().find((item) => item.media.type === 'movie')!;
     firstRepository.transition(request.id, 'APPROVED', 'admin', 'Persistence test approval.');
     firstRepository.setDownload(request.id, 'radarr-download-id');
+    firstRepository.setTorrent(request.id, {
+      hash: 'a'.repeat(40),
+      name: 'Test torrent',
+      state: 'downloading',
+      rawState: 'downloading',
+      progress: 25,
+      totalBytes: 1_000,
+      downloadedBytes: 250,
+      remainingBytes: 750,
+      downloadSpeedBytes: 100,
+      etaSeconds: 8,
+      seedsConnected: 2,
+      seedsTotal: 20,
+      peersConnected: 1,
+      peersTotal: 10,
+      availability: 1.5,
+      ratio: 0,
+      trackers: [],
+      errorMessage: null,
+      updatedAt: '2026-09-07T00:00:00.000Z',
+    });
     firstRepository.close();
 
     const secondRepository = new RequestRepository(path);
@@ -50,6 +71,7 @@ describe('RequestRepository', () => {
     expect(restored?.state).toBe('APPROVED');
     expect(restored?.history.at(-1)?.note).toBe('Persistence test approval.');
     expect(restored?.downloadId).toBe('radarr-download-id');
+    expect(restored?.torrent?.downloadSpeedBytes).toBe(100);
     secondRepository.close();
   });
 
@@ -90,11 +112,34 @@ describe('RequestRepository', () => {
       'system',
       'SECRET.RELEASE.GROUP.2160p from private-indexer.',
     );
+    const withTorrent = repository.setTorrent(internal.id, {
+      hash: 'f'.repeat(40),
+      name: 'PRIVATE.TORRENT.NAME',
+      state: 'downloading',
+      rawState: 'downloading',
+      progress: 10,
+      totalBytes: 1_000,
+      downloadedBytes: 100,
+      remainingBytes: 900,
+      downloadSpeedBytes: 50,
+      etaSeconds: 18,
+      seedsConnected: 1,
+      seedsTotal: 2,
+      peersConnected: 1,
+      peersTotal: 3,
+      availability: 1,
+      ratio: 0,
+      trackers: [{ host: 'private.example', status: 'working', message: null }],
+      errorMessage: null,
+      updatedAt: '2026-09-07T00:00:00.000Z',
+    });
 
-    const publicPayload = JSON.stringify(toFamilyRequest(internal));
+    const publicPayload = JSON.stringify(toFamilyRequest(withTorrent));
     expect(publicPayload).not.toContain('SECRET.RELEASE.GROUP');
     expect(publicPayload).not.toContain('private-indexer');
     expect(publicPayload).not.toContain('Radarr item');
+    expect(publicPayload).not.toContain('PRIVATE.TORRENT.NAME');
+    expect(publicPayload).not.toContain('private.example');
     expect(publicPayload).toContain('Estamos preparando tu contenido.');
     repository.close();
   });

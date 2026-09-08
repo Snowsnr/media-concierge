@@ -9,13 +9,17 @@ import {
   MockPushProvider,
   MockSubtitleClient,
   MockTorrentClient,
+  QBittorrentClientV2,
+  QBittorrentHttpError,
   RadarrClientV3,
   RadarrHttpError,
   SupabasePublicRequestBroker,
   type RadarrClient,
+  type TorrentClient,
 } from '@media-concierge/integrations';
 import {
   adminDecisionSchema,
+  canTransition,
   createRequestSchema,
   createInvitationSchema,
   downloadControlSchema,
@@ -67,7 +71,20 @@ const radarr: RadarrClient = radarrConfigured
     })
   : new MockArrClient('Radarr');
 const sonarr = new MockArrClient('Sonarr');
-const torrent = new MockTorrentClient();
+const qbittorrentConfigured = Boolean(
+  process.env.QBITTORRENT_URL &&
+  (process.env.QBITTORRENT_API_KEY ||
+    (process.env.QBITTORRENT_USERNAME && process.env.QBITTORRENT_PASSWORD)),
+);
+const mockTorrent = new MockTorrentClient();
+const torrent: TorrentClient = qbittorrentConfigured
+  ? new QBittorrentClientV2({
+      baseUrl: process.env.QBITTORRENT_URL!,
+      apiKey: process.env.QBITTORRENT_API_KEY,
+      username: process.env.QBITTORRENT_USERNAME,
+      password: process.env.QBITTORRENT_PASSWORD,
+    })
+  : mockTorrent;
 const subtitles = new MockSubtitleClient();
 const mediaServer = new MockMediaServerClient();
 const brokerConfigured = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_BRIDGE_TOKEN);
@@ -137,8 +154,64 @@ const refreshRadarrRequest = async (id: string) => {
   let item = repository.get(id);
   if (!item) throw new Error('Request not found');
   if (!radarrConfigured || item.media.type !== 'movie') return item;
-  if (!['QUEUED', 'DOWNLOADING', 'IMPORTING'].includes(item.state)) {
+  if (!['QUEUED', 'DOWNLOADING', 'PAUSED', 'STALLED', 'IMPORTING'].includes(item.state)) {
     throw new Error(`Invalid Radarr refresh while in ${item.state}`);
+  }
+
+  if (qbittorrentConfigured && item.downloadId) {
+    try {
+      const torrentStatus = await torrent.status(item.downloadId);
+      if (torrentStatus) {
+        item = repository.setTorrent(id, torrentStatus);
+        item = repository.setProgress(id, torrentStatus.progress);
+        if (
+          torrentStatus.state === 'downloading' &&
+          ['QUEUED', 'PAUSED', 'STALLED'].includes(item.state)
+        ) {
+          item = repository.transition(
+            id,
+            'DOWNLOADING',
+            'system',
+            'qBittorrent confirmó actividad de descarga.',
+          );
+        } else if (
+          torrentStatus.state === 'stalled' &&
+          ['QUEUED', 'DOWNLOADING'].includes(item.state)
+        ) {
+          item = repository.transition(
+            id,
+            'STALLED',
+            'system',
+            'qBittorrent reportó una descarga estancada.',
+          );
+        } else if (
+          torrentStatus.state === 'paused' &&
+          ['QUEUED', 'DOWNLOADING', 'STALLED'].includes(item.state)
+        ) {
+          item = repository.transition(
+            id,
+            'PAUSED',
+            'system',
+            'qBittorrent reportó la descarga pausada.',
+          );
+        } else if (
+          torrentStatus.state === 'errored' &&
+          ['QUEUED', 'DOWNLOADING', 'STALLED'].includes(item.state)
+        ) {
+          return repository.transition(
+            id,
+            'FAILED',
+            'system',
+            torrentStatus.errorMessage ?? 'qBittorrent reportó un error en la descarga.',
+          );
+        }
+      }
+    } catch (error) {
+      app.log.warn(
+        { err: { message: error instanceof Error ? error.message : 'Torrent status failed' } },
+        'qBittorrent telemetry failed; Radarr polling continues',
+      );
+    }
   }
 
   const queue = await radarr.queue(item.media.tmdbId);
@@ -172,13 +245,9 @@ const refreshRadarrRequest = async (id: string) => {
 
   const movie = await radarr.lookup(item.media.tmdbId);
   if (!movie.hasFile) {
-    return repository.recordEvent(
-      id,
-      'system',
-      'Radarr todavía no reporta una descarga activa ni un archivo importado.',
-    );
+    return item;
   }
-  if (item.state === 'QUEUED') {
+  if (['QUEUED', 'PAUSED', 'STALLED'].includes(item.state)) {
     item = repository.transition(
       id,
       'DOWNLOADING',
@@ -202,6 +271,7 @@ app.get('/health', async () => ({
   status: 'ok',
   mode: brokerConfigured ? 'supabase-broker' : 'mock',
   radarr: radarrConfigured ? 'radarr' : 'mock',
+  qbittorrent: qbittorrentConfigured ? 'qbittorrent' : 'mock',
   service: 'media-concierge-api',
 }));
 
@@ -250,6 +320,8 @@ app.get('/api/requests/:id', async (request, reply) => {
 });
 
 app.get('/api/integrations/radarr', async () => radarr.configuration());
+
+app.get('/api/integrations/qbittorrent', async () => torrent.configuration());
 
 app.get('/api/requests/:id/radarr', async (request, reply) => {
   const { id } = requestParams.parse(request.params);
@@ -501,21 +573,74 @@ app.post('/api/requests/:id/download/control', async (request) => {
   const control = downloadControlSchema.parse(request.body);
   const item = repository.get(id);
   if (!item) throw new Error('Request not found');
+  const liveTorrentMode = qbittorrentConfigured && radarrConfigured && item.media.type === 'movie';
+  const liveTorrent = liveTorrentMode ? item.downloadId : null;
+  const requireTransition = (nextState: Parameters<typeof canTransition>[1]) => {
+    if (!canTransition(item.state, nextState)) {
+      throw new Error(`Invalid download control while in ${item.state}`);
+    }
+  };
+  const requireLiveHash = () => {
+    if (liveTorrentMode && !liveTorrent) {
+      throw new Error('La solicitud todavía no tiene un hash de qBittorrent verificable.');
+    }
+  };
 
   if (control.action === 'pause') {
+    requireTransition('PAUSED');
+    requireLiveHash();
+    if (liveTorrent) await torrent.pause(liveTorrent);
     repository.setAllAiredEpisodeStates(id, 'PAUSED');
-    return repository.transition(id, 'PAUSED', 'admin', 'Descarga pausada manualmente.');
+    return repository.transition(
+      id,
+      'PAUSED',
+      'admin',
+      liveTorrent
+        ? 'Descarga pausada manualmente en qBittorrent.'
+        : 'Descarga pausada manualmente.',
+    );
   }
   if (control.action === 'resume') {
+    requireTransition('DOWNLOADING');
+    requireLiveHash();
+    if (liveTorrent) await torrent.resume(liveTorrent);
     repository.setScenario(id, 'none', 'admin');
     repository.setAllAiredEpisodeStates(id, 'DOWNLOADING');
-    return repository.transition(id, 'DOWNLOADING', 'admin', 'Descarga reanudada manualmente.');
+    return repository.transition(
+      id,
+      'DOWNLOADING',
+      'admin',
+      liveTorrent
+        ? 'Descarga reanudada manualmente en qBittorrent.'
+        : 'Descarga reanudada manualmente.',
+    );
   }
   if (control.action === 'reannounce') {
-    await torrent.reannounce(`mock-${item.selectedReleaseId ?? 'unknown'}`);
-    return repository.recordEvent(id, 'admin', 'Reannounce solicitado al adaptador simulado.');
+    if (!['QUEUED', 'DOWNLOADING', 'PAUSED', 'STALLED'].includes(item.state)) {
+      throw new Error(`Invalid reannounce while in ${item.state}`);
+    }
+    requireLiveHash();
+    if (liveTorrent) await torrent.reannounce(liveTorrent);
+    else await mockTorrent.reannounce(`mock-${item.selectedReleaseId ?? 'unknown'}`);
+    return repository.recordEvent(
+      id,
+      'admin',
+      liveTorrent
+        ? 'Reannounce solicitado a qBittorrent.'
+        : 'Reannounce solicitado al adaptador simulado.',
+    );
   }
   if (control.action === 'retry-release') {
+    requireTransition('SELECTING_RELEASE');
+    if (qbittorrentConfigured && radarrConfigured && item.media.type === 'movie') {
+      const removed = await radarr.removeFromQueue(item.media.tmdbId, {
+        removeFromClient: true,
+        blocklist: true,
+      });
+      if (!removed) {
+        throw new Error('Radarr ya no administra esta descarga; no se modificó qBittorrent.');
+      }
+    }
     repository.setScenario(id, 'none', 'admin');
     repository.clearDownload(id);
     return repository.transition(
@@ -525,10 +650,24 @@ app.post('/api/requests/:id/download/control', async (request) => {
       'Release anterior abandonado de forma coordinada; regresando a la búsqueda.',
     );
   }
+  requireTransition('CANCELLED');
+  if (!control.deleteData) requireLiveHash();
   const deletion = control.deleteData
-    ? ' Se borrarían los datos parciales.'
-    : ' Se conservarían los datos parciales.';
-  const blocklist = control.blocklist ? ' El release se añadiría a la blocklist.' : '';
+    ? qbittorrentConfigured
+      ? ' Se solicitó el borrado del torrent y sus datos parciales.'
+      : ' Se borrarían los datos parciales.'
+    : ' Se conservaron los datos parciales.';
+  const blocklist = control.blocklist ? ' El release se añadió a la blocklist.' : '';
+  if (qbittorrentConfigured && radarrConfigured && item.media.type === 'movie') {
+    if (!control.deleteData && item.downloadId) await torrent.pause(item.downloadId);
+    const removed = await radarr.removeFromQueue(item.media.tmdbId, {
+      removeFromClient: control.deleteData,
+      blocklist: control.blocklist,
+    });
+    if (!removed) {
+      throw new Error('Radarr ya no administra esta descarga; no se modificó qBittorrent.');
+    }
+  }
   return repository.transition(
     id,
     'CANCELLED',
@@ -741,7 +880,7 @@ app.setErrorHandler((error, _request, reply) => {
   const message = error instanceof Error ? error.message : 'Unknown request error';
   const name = error instanceof Error ? error.name : 'UnknownError';
   const status =
-    error instanceof RadarrHttpError
+    error instanceof RadarrHttpError || error instanceof QBittorrentHttpError
       ? 502
       : name === 'TimeoutError'
         ? 504

@@ -11,6 +11,7 @@ import type {
   ReleaseCandidate,
   RequestState,
   SubtitleCandidate,
+  TorrentConfiguration,
 } from '@media-concierge/shared';
 import { Button, EmptyState, StatusPill } from '@media-concierge/ui';
 import { api } from './api';
@@ -20,6 +21,16 @@ const formatDate = (value: string) =>
     new Date(value),
   );
 const size = (bytes: number) => `${(bytes / 1_000_000_000).toFixed(1)} GB`;
+const speed = (bytes: number) =>
+  bytes >= 1_000_000
+    ? `${(bytes / 1_000_000).toFixed(1)} MB/s`
+    : `${Math.round(bytes / 1_000)} KB/s`;
+const eta = (seconds: number | null) => {
+  if (seconds === null) return 'Sin calcular';
+  if (seconds < 60) return `${seconds} s`;
+  if (seconds < 3_600) return `${Math.ceil(seconds / 60)} min`;
+  return `${Math.floor(seconds / 3_600)} h ${Math.ceil((seconds % 3_600) / 60)} min`;
+};
 const pendingStates: RequestState[] = ['REQUESTED', 'SYNCED_TO_HOMELAB', 'NEEDS_CLARIFICATION'];
 
 export function App() {
@@ -65,7 +76,7 @@ export function App() {
           <span>◉</span>
           <div>
             <strong>Modo seguro</strong>
-            <small>ARR aún simulado</small>
+            <small>Control humano obligatorio</small>
           </div>
         </div>
       </aside>
@@ -196,6 +207,7 @@ function RequestWorkspace() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [radarrLive, setRadarrLive] = useState(false);
+  const [qbittorrentLive, setQbittorrentLive] = useState(false);
   const load = useCallback(async () => {
     if (!id) return;
     const result = await api.getRequest(id);
@@ -207,10 +219,15 @@ function RequestWorkspace() {
     load().catch((reason: Error) => setError(reason.message));
   }, [load]);
   useEffect(() => {
-    api
-      .radarrConfiguration()
-      .then((configuration) => setRadarrLive(configuration.mode === 'radarr'))
-      .catch(() => setRadarrLive(false));
+    Promise.all([api.radarrConfiguration(), api.qbittorrentConfiguration()])
+      .then(([radarrConfiguration, qbittorrentConfiguration]) => {
+        setRadarrLive(radarrConfiguration.mode === 'radarr');
+        setQbittorrentLive(qbittorrentConfiguration.mode === 'qbittorrent');
+      })
+      .catch(() => {
+        setRadarrLive(false);
+        setQbittorrentLive(false);
+      });
   }, []);
   useEffect(() => {
     if (
@@ -218,18 +235,21 @@ function RequestWorkspace() {
       !radarrLive ||
       busy ||
       item?.media.type !== 'movie' ||
-      !['QUEUED', 'DOWNLOADING', 'IMPORTING'].includes(item.state)
+      !['QUEUED', 'DOWNLOADING', 'PAUSED', 'STALLED', 'IMPORTING'].includes(item.state)
     ) {
       return;
     }
-    const interval = window.setInterval(() => {
-      void api
-        .refreshRadarr(id)
-        .then(() => load())
-        .catch((reason: Error) => setError(reason.message));
-    }, 8_000);
+    const interval = window.setInterval(
+      () => {
+        void api
+          .refreshRadarr(id)
+          .then(() => load())
+          .catch((reason: Error) => setError(reason.message));
+      },
+      qbittorrentLive ? 4_000 : 8_000,
+    );
     return () => window.clearInterval(interval);
-  }, [busy, id, item?.media.type, item?.state, load, radarrLive]);
+  }, [busy, id, item?.media.type, item?.state, load, qbittorrentLive, radarrLive]);
   const act = async (task: () => Promise<MediaRequest>) => {
     setBusy(true);
     setError('');
@@ -294,6 +314,7 @@ function RequestWorkspace() {
             busy={busy}
             act={act}
             radarrLive={radarrLive}
+            qbittorrentLive={qbittorrentLive}
           />
         </section>
         <aside className="context-column">
@@ -327,6 +348,7 @@ function Workflow({
   busy,
   act,
   radarrLive,
+  qbittorrentLive,
 }: {
   item: MediaRequest;
   releases: ReleaseCandidate[];
@@ -336,7 +358,9 @@ function Workflow({
   busy: boolean;
   act: (task: () => Promise<MediaRequest>) => Promise<void>;
   radarrLive: boolean;
+  qbittorrentLive: boolean;
 }) {
+  const liveTorrent = qbittorrentLive && radarrLive && item.media.type === 'movie';
   if (pendingStates.includes(item.state))
     return (
       <div>
@@ -429,10 +453,13 @@ function Workflow({
           <div className="progress-track">
             <span style={{ width: `${item.progress}%` }} />
           </div>
-          {radarrLive && item.media.type === 'movie' ? (
+          {liveTorrent && item.torrent ? (
+            <TorrentDetails item={item} />
+          ) : radarrLive && item.media.type === 'movie' ? (
             <p className="workflow-copy">
-              Progreso reportado por la cola de Radarr. Seeds, peers, velocidad y ETA reales se
-              conectarán directamente a qBittorrent en la fase 5.
+              {liveTorrent
+                ? 'Esperando que Radarr proporcione el hash y qBittorrent registre el torrent.'
+                : 'Progreso reportado por la cola de Radarr. qBittorrent todavía está en modo simulado.'}
             </p>
           ) : (
             <div className="download-stats">
@@ -475,6 +502,24 @@ function Workflow({
                   ? 'Simular +25%'
                   : 'Completar e importar'}
             </Button>
+            {liveTorrent && (
+              <>
+                <Button
+                  variant="secondary"
+                  disabled={busy || !item.torrent}
+                  onClick={() => act(() => api.controlDownload(item.id, 'pause'))}
+                >
+                  Pausar
+                </Button>
+                <Button
+                  variant="ghost"
+                  disabled={busy || !item.torrent}
+                  onClick={() => act(() => api.controlDownload(item.id, 'reannounce'))}
+                >
+                  Forzar reannounce
+                </Button>
+              </>
+            )}
             {!(radarrLive && item.media.type === 'movie') && (
               <>
                 <Button
@@ -498,15 +543,17 @@ function Workflow({
       </div>
     );
   if (item.state === 'PAUSED' || item.state === 'STALLED' || item.state === 'FAILED')
-    return <DownloadRecovery item={item} busy={busy} act={act} />;
+    return <DownloadRecovery item={item} busy={busy} act={act} liveTorrent={liveTorrent} />;
   if (item.state === 'IMPORTING')
     return (
       <div>
         <span className="step-label">Paso 3 · Importación</span>
         <h2>Esperando a Radarr/Sonarr</h2>
         <p className="workflow-copy">
-          La descarga terminó, pero el mock mantiene la importación pendiente para probar una demora
-          realista. No usamos un sleep fijo.
+          {radarrLive && item.media.type === 'movie'
+            ? 'qBittorrent terminó la descarga. Radarr sigue siendo responsable de importar y mover el archivo.'
+            : 'La descarga terminó, pero el mock mantiene la importación pendiente para probar una demora realista.'}{' '}
+          No usamos un sleep fijo.
         </p>
         <div className="verification-box warning-box">
           <span>◷</span>
@@ -635,14 +682,82 @@ function ScenarioLab({
   );
 }
 
+function TorrentDetails({ item }: { item: MediaRequest }) {
+  const torrent = item.torrent;
+  if (!torrent) return null;
+  return (
+    <div className="torrent-details">
+      <p className="torrent-name">
+        <strong>{torrent.name}</strong>
+        <span>{torrent.rawState}</span>
+      </p>
+      <div className="download-stats torrent-stats">
+        <div>
+          <span>Descargado</span>
+          <strong>
+            {size(torrent.downloadedBytes)} / {size(torrent.totalBytes)}
+          </strong>
+        </div>
+        <div>
+          <span>Restante</span>
+          <strong>{size(torrent.remainingBytes)}</strong>
+        </div>
+        <div>
+          <span>Velocidad</span>
+          <strong>{speed(torrent.downloadSpeedBytes)}</strong>
+        </div>
+        <div>
+          <span>ETA</span>
+          <strong>{eta(torrent.etaSeconds)}</strong>
+        </div>
+        <div>
+          <span>Seeds conectados</span>
+          <strong>
+            {torrent.seedsConnected} / {torrent.seedsTotal}
+          </strong>
+        </div>
+        <div>
+          <span>Peers conectados</span>
+          <strong>
+            {torrent.peersConnected} / {torrent.peersTotal}
+          </strong>
+        </div>
+        <div>
+          <span>Disponibilidad</span>
+          <strong>{torrent.availability?.toFixed(2) ?? 'No indicada'}</strong>
+        </div>
+        <div>
+          <span>Ratio</span>
+          <strong>{torrent.ratio.toFixed(2)}</strong>
+        </div>
+      </div>
+      {torrent.errorMessage && <p className="torrent-error">{torrent.errorMessage}</p>}
+      {torrent.trackers.length > 0 && (
+        <details className="tracker-list">
+          <summary>Trackers ({torrent.trackers.length})</summary>
+          {torrent.trackers.map((tracker, index) => (
+            <p key={`${tracker.host}-${index}`}>
+              <strong>{tracker.host}</strong>
+              <span>{tracker.status}</span>
+              {tracker.message && <small>{tracker.message}</small>}
+            </p>
+          ))}
+        </details>
+      )}
+    </div>
+  );
+}
+
 function DownloadRecovery({
   item,
   busy,
   act,
+  liveTorrent,
 }: {
   item: MediaRequest;
   busy: boolean;
   act: (task: () => Promise<MediaRequest>) => Promise<void>;
+  liveTorrent: boolean;
 }) {
   const title =
     item.state === 'PAUSED'
@@ -655,9 +770,10 @@ function DownloadRecovery({
       <span className="step-label">Paso 3 · Intervención manual</span>
       <h2>{title}</h2>
       <p className="workflow-copy">
-        Elige cómo recuperarla. Volver al selector simula primero la retirada coordinada desde
-        Radarr/Sonarr.
+        Elige cómo recuperarla. Volver al selector retira primero la descarga desde Radarr para no
+        dejar estados inconsistentes.
       </p>
+      {liveTorrent && item.torrent && <TorrentDetails item={item} />}
       <div className="recovery-actions">
         {item.state !== 'FAILED' && (
           <Button disabled={busy} onClick={() => act(() => api.controlDownload(item.id, 'resume'))}>
@@ -703,7 +819,9 @@ function DownloadRecovery({
           onClick={() => {
             if (
               window.confirm(
-                'Esta acción simula borrar datos parciales y añadir el release a la blocklist. ¿Continuar?',
+                liveTorrent
+                  ? 'Esta acción retirará la descarga mediante Radarr, borrará los datos parciales en qBittorrent y añadirá el release a la blocklist. ¿Continuar?'
+                  : 'Esta acción simula borrar datos parciales y añadir el release a la blocklist. ¿Continuar?',
               )
             )
               void act(() =>
@@ -1017,12 +1135,14 @@ function History({ item }: { item: MediaRequest }) {
 function HealthPage() {
   const [checks, setChecks] = useState<HealthCheck[]>([]);
   const [radarrConfig, setRadarrConfig] = useState<ArrConfiguration | null>(null);
+  const [torrentConfig, setTorrentConfig] = useState<TorrentConfiguration | null>(null);
   const [error, setError] = useState('');
   useEffect(() => {
-    Promise.all([api.health(), api.radarrConfiguration()])
-      .then(([nextChecks, configuration]) => {
+    Promise.all([api.health(), api.radarrConfiguration(), api.qbittorrentConfiguration()])
+      .then(([nextChecks, configuration, nextTorrentConfiguration]) => {
         setChecks(nextChecks);
         setRadarrConfig(configuration);
+        setTorrentConfig(nextTorrentConfiguration);
       })
       .catch((reason: Error) => setError(reason.message));
   }, []);
@@ -1105,6 +1225,46 @@ function HealthPage() {
                 </div>
               </div>
             </>
+          )}
+        </section>
+      )}
+      {torrentConfig && (
+        <section className="radarr-config-card">
+          <div className="radarr-config-heading">
+            <div>
+              <span className="kicker">Fase 5 · Descargas</span>
+              <h2>
+                {torrentConfig.mode === 'qbittorrent'
+                  ? 'Configuración de qBittorrent'
+                  : 'qBittorrent simulado'}
+              </h2>
+            </div>
+            <code>{torrentConfig.configured ? 'LISTO' : 'SIN CONTROL REAL'}</code>
+          </div>
+          {torrentConfig.issues.length > 0 && (
+            <ul>
+              {torrentConfig.issues.map((issue) => (
+                <li key={issue}>{issue}</li>
+              ))}
+            </ul>
+          )}
+          {torrentConfig.mode === 'qbittorrent' && (
+            <div className="radarr-config-grid">
+              <div>
+                <span>Versión</span>
+                <strong>{torrentConfig.version ?? 'No indicada'}</strong>
+              </div>
+              <div>
+                <span>WebAPI</span>
+                <strong>{torrentConfig.webApiVersion ?? 'No indicada'}</strong>
+              </div>
+              <div>
+                <span>Autenticación</span>
+                <strong>
+                  {torrentConfig.authMode === 'api-key' ? 'API key' : 'Usuario y contraseña'}
+                </strong>
+              </div>
+            </div>
           )}
         </section>
       )}

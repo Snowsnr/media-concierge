@@ -8,6 +8,8 @@ import type {
   MediaRequest,
   ReleaseCandidate,
   SubtitleCandidate,
+  TorrentConfiguration,
+  TorrentTelemetry,
 } from '@media-concierge/shared';
 
 export interface MetadataProvider {
@@ -29,13 +31,18 @@ export interface RadarrClient {
   searchReleases(request: MediaRequest): Promise<ReleaseCandidate[]>;
   grab(release: ReleaseCandidate): Promise<{ downloadId: string }>;
   queue(tmdbId: number): Promise<ArrQueueStatus | null>;
+  removeFromQueue(
+    tmdbId: number,
+    options: { removeFromClient: boolean; blocklist: boolean },
+  ): Promise<boolean>;
 }
 
 export type SonarrClient = RadarrClient;
 
 export interface TorrentClient {
   health(): Promise<HealthCheck>;
-  getProgress(downloadId: string): Promise<{ progress: number; state: string }>;
+  configuration(): Promise<TorrentConfiguration>;
+  status(downloadId: string): Promise<TorrentTelemetry | null>;
   pause(downloadId: string): Promise<void>;
   resume(downloadId: string): Promise<void>;
   reannounce(downloadId: string): Promise<void>;

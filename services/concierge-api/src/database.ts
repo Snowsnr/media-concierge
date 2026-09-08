@@ -13,6 +13,7 @@ import {
   type RequestHistoryEntry,
   type RequestState,
   type SeriesScope,
+  type TorrentTelemetry,
 } from '@media-concierge/shared';
 import { mockCatalog } from '@media-concierge/integrations';
 
@@ -28,6 +29,7 @@ interface RequestRow {
   progress: number;
   selected_release_id: string | null;
   download_id: string | null;
+  torrent_json: string | null;
   selected_subtitle_id: string | null;
   mock_scenario: string;
   episodes_json: string;
@@ -80,6 +82,7 @@ export class RequestRepository {
         progress INTEGER NOT NULL DEFAULT 0,
         selected_release_id TEXT,
         download_id TEXT,
+        torrent_json TEXT,
         selected_subtitle_id TEXT,
         mock_scenario TEXT NOT NULL DEFAULT 'none',
         episodes_json TEXT NOT NULL DEFAULT '[]',
@@ -116,6 +119,9 @@ export class RequestRepository {
     }
     if (!columns.some((column) => column.name === 'download_id')) {
       this.database.exec('ALTER TABLE requests ADD COLUMN download_id TEXT');
+    }
+    if (!columns.some((column) => column.name === 'torrent_json')) {
+      this.database.exec('ALTER TABLE requests ADD COLUMN torrent_json TEXT');
     }
     this.database.exec(
       'CREATE UNIQUE INDEX IF NOT EXISTS requests_public_request_id ON requests(public_request_id) WHERE public_request_id IS NOT NULL',
@@ -230,6 +236,13 @@ export class RequestRepository {
     return this.require(id);
   }
 
+  setTorrent(id: string, torrent: TorrentTelemetry): MediaRequest {
+    this.database
+      .prepare('UPDATE requests SET torrent_json = ?, updated_at = ? WHERE id = ?')
+      .run(JSON.stringify(torrent), new Date().toISOString(), id);
+    return this.require(id);
+  }
+
   clearDownload(id: string): MediaRequest {
     const request = this.require(id);
     const episodes = request.episodes.map((episode) =>
@@ -239,7 +252,7 @@ export class RequestRepository {
     );
     this.database
       .prepare(
-        'UPDATE requests SET selected_release_id = NULL, download_id = NULL, progress = 0, episodes_json = ?, updated_at = ? WHERE id = ?',
+        'UPDATE requests SET selected_release_id = NULL, download_id = NULL, torrent_json = NULL, progress = 0, episodes_json = ?, updated_at = ? WHERE id = ?',
       )
       .run(JSON.stringify(episodes), new Date().toISOString(), id);
     return this.require(id);
@@ -362,6 +375,7 @@ export class RequestRepository {
       progress: row.progress,
       selectedReleaseId: row.selected_release_id,
       downloadId: row.download_id,
+      torrent: row.torrent_json ? (JSON.parse(row.torrent_json) as TorrentTelemetry) : null,
       selectedSubtitleId: row.selected_subtitle_id,
       mockScenario: row.mock_scenario as MockScenario,
       episodes: JSON.parse(row.episodes_json) as EpisodeProgress[],

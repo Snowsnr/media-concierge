@@ -12,6 +12,7 @@ import type {
   NotificationConfig,
   ReleaseCandidate,
   SubtitleCandidate,
+  TorrentConfiguration,
 } from '@media-concierge/shared';
 
 const API_URL = import.meta.env.VITE_CONCIERGE_API_URL ?? 'http://localhost:4100';
@@ -59,6 +60,7 @@ export const api = {
   ) => post<MediaRequest>(`/api/requests/${id}/episodes/${episodeId}`, { action }),
   health: () => request<HealthCheck[]>('/api/integrations/health'),
   radarrConfiguration: () => request<ArrConfiguration>('/api/integrations/radarr'),
+  qbittorrentConfiguration: () => request<TorrentConfiguration>('/api/integrations/qbittorrent'),
   radarrStatus: (id: string) =>
     request<{
       configuration: ArrConfiguration;

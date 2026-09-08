@@ -396,6 +396,27 @@ export class RadarrClientV3 implements RadarrClient {
     };
   }
 
+  async removeFromQueue(
+    tmdbId: number,
+    options: { removeFromClient: boolean; blocklist: boolean },
+  ): Promise<boolean> {
+    const queue = await this.queue(tmdbId);
+    if (!queue) return false;
+    const query = new URLSearchParams({
+      removeFromClient: String(options.removeFromClient),
+      blocklist: String(options.blocklist),
+      skipRedownload: 'true',
+      changeCategory: 'false',
+    });
+    await this.request(
+      `queue/${encodeURIComponent(queue.queueId)}?${query.toString()}`,
+      z.unknown(),
+      { method: 'DELETE' },
+      'retirada coordinada de cola',
+    );
+    return true;
+  }
+
   private get<Schema extends z.ZodTypeAny>(
     path: string,
     schema: Schema,
