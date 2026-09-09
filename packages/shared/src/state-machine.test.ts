@@ -38,6 +38,10 @@ describe('request state machine', () => {
     expect(canTransition('ADDING_TO_ARR', 'READY')).toBe(false);
   });
 
+  it('allows replacing a manually selected subtitle before Jellyfin verification', () => {
+    expect(canTransition('VERIFYING_JELLYFIN', 'SUBTITLES_REQUIRED')).toBe(true);
+  });
+
   it('allows recovery from a stalled download without hiding human choice', () => {
     expect(canTransition('STALLED', 'DOWNLOADING')).toBe(true);
     expect(canTransition('STALLED', 'SELECTING_RELEASE')).toBe(true);

@@ -1,9 +1,4 @@
-import type {
-  HealthCheck,
-  MediaRequest,
-  ReleaseCandidate,
-  SubtitleCandidate,
-} from '@media-concierge/shared';
+import type { HealthCheck, MediaRequest, ReleaseCandidate } from '@media-concierge/shared';
 import type {
   MediaServerClient,
   MetadataProvider,
@@ -125,10 +120,31 @@ export class MockSubtitleClient implements SubtitleClient {
   async health() {
     return mockHealth('Bazarr');
   }
-  async search(request: MediaRequest) {
+  async configuration() {
+    return {
+      mode: 'mock' as const,
+      configured: false,
+      version: null,
+      authMode: 'mock' as const,
+      manualSelection: true,
+      issues: ['Adaptador simulado; no hay conexión externa.'],
+    };
+  }
+  async isRecognized(_target: { kind: 'movie' | 'episode'; externalId: number }) {
+    return true;
+  }
+  async search(request: MediaRequest, _target?: { kind: 'movie' | 'episode'; externalId: number }) {
     return buildMockSubtitles(request.id);
   }
-  async download(_candidate: SubtitleCandidate) {}
+  async download(
+    request: MediaRequest,
+    _target: Parameters<SubtitleClient['download']>[1],
+    candidateId: string,
+  ) {
+    const candidate = buildMockSubtitles(request.id).find((item) => item.id === candidateId);
+    if (!candidate) throw new Error('Subtitle not found');
+    return candidate;
+  }
 }
 
 export class MockMediaServerClient implements MediaServerClient {

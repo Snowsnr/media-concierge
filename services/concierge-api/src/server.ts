@@ -2,6 +2,8 @@ import './env.js';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import {
+  BazarrClientV1,
+  BazarrHttpError,
   MockArrClient,
   MockMediaServerClient,
   MockMetadataProvider,
@@ -15,6 +17,8 @@ import {
   RadarrHttpError,
   SupabasePublicRequestBroker,
   type RadarrClient,
+  type SubtitleClient,
+  type SubtitleTarget,
   type TorrentClient,
 } from '@media-concierge/integrations';
 import {
@@ -85,7 +89,14 @@ const torrent: TorrentClient = qbittorrentConfigured
       password: process.env.QBITTORRENT_PASSWORD,
     })
   : mockTorrent;
-const subtitles = new MockSubtitleClient();
+const bazarrConfigured = Boolean(process.env.BAZARR_URL && process.env.BAZARR_API_KEY);
+const mockSubtitles = new MockSubtitleClient();
+const subtitles: SubtitleClient = bazarrConfigured
+  ? new BazarrClientV1({
+      baseUrl: process.env.BAZARR_URL!,
+      apiKey: process.env.BAZARR_API_KEY!,
+    })
+  : mockSubtitles;
 const mediaServer = new MockMediaServerClient();
 const brokerConfigured = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_BRIDGE_TOKEN);
 const broker = brokerConfigured
@@ -117,20 +128,58 @@ const selectionBody = z.object({ candidateId: z.string().min(1).max(200) });
 const episodeParams = z.object({ id: z.string().uuid(), episodeId: z.string().uuid() });
 const resetFamilyPasswordBody = z.object({ password: z.string().min(10).max(72) });
 
-const continueAfterImport = (id: string) => {
+const continueAfterImport = (
+  id: string,
+  note = 'Archivo importado. Esperando reconocimiento de Bazarr.',
+) => {
+  const current = repository.get(id);
+  if (!current) throw new Error('Request not found');
   repository.setAllAiredEpisodeStates(id, 'IMPORTED');
-  repository.transition(
-    id,
-    'WAITING_FOR_BAZARR',
-    'system',
-    'Archivo importado. Esperando reconocimiento de Bazarr.',
-  );
+  repository.transition(id, 'WAITING_FOR_BAZARR', 'system', note);
+  if (bazarrConfigured && radarrConfigured && current.media.type === 'movie') {
+    return repository.get(id)!;
+  }
   repository.setAllAiredEpisodeStates(id, 'SUBTITLES_REQUIRED');
   return repository.transition(
     id,
     'SUBTITLES_REQUIRED',
     'system',
     'Subtítulos simulados listos para revisión manual.',
+  );
+};
+
+const subtitleTargetFor = async (
+  item: NonNullable<ReturnType<RequestRepository['get']>>,
+): Promise<SubtitleTarget | undefined> => {
+  if (!(bazarrConfigured && radarrConfigured && item.media.type === 'movie')) return undefined;
+  const movie = await radarr.lookup(item.media.tmdbId);
+  if (!movie.movieId) throw new Error('Radarr todavía no devolvió el ID requerido por Bazarr.');
+  return { kind: 'movie', externalId: movie.movieId };
+};
+
+const refreshBazarrRequest = async (id: string) => {
+  const item = repository.get(id);
+  if (!item) throw new Error('Request not found');
+  if (item.state !== 'WAITING_FOR_BAZARR') {
+    throw new Error(`Invalid Bazarr refresh while in ${item.state}`);
+  }
+  const target = await subtitleTargetFor(item);
+  if (!target) {
+    repository.setAllAiredEpisodeStates(id, 'SUBTITLES_REQUIRED');
+    return repository.transition(
+      id,
+      'SUBTITLES_REQUIRED',
+      'system',
+      'Subtítulos simulados listos para revisión manual.',
+    );
+  }
+  if (!(await subtitles.isRecognized(target))) return item;
+  repository.setAllAiredEpisodeStates(id, 'SUBTITLES_REQUIRED');
+  return repository.transition(
+    id,
+    'SUBTITLES_REQUIRED',
+    'system',
+    'Bazarr reconoció la película. Búsqueda manual disponible.',
   );
 };
 
@@ -272,6 +321,7 @@ app.get('/health', async () => ({
   mode: brokerConfigured ? 'supabase-broker' : 'mock',
   radarr: radarrConfigured ? 'radarr' : 'mock',
   qbittorrent: qbittorrentConfigured ? 'qbittorrent' : 'mock',
+  bazarr: bazarrConfigured ? 'bazarr' : 'mock',
   service: 'media-concierge-api',
 }));
 
@@ -322,6 +372,8 @@ app.get('/api/requests/:id', async (request, reply) => {
 app.get('/api/integrations/radarr', async () => radarr.configuration());
 
 app.get('/api/integrations/qbittorrent', async () => torrent.configuration());
+
+app.get('/api/integrations/bazarr', async () => subtitles.configuration());
 
 app.get('/api/requests/:id/radarr', async (request, reply) => {
   const { id } = requestParams.parse(request.params);
@@ -388,17 +440,9 @@ app.post('/api/requests/:id/decision', async (request) => {
     const existing = await client.lookup(adding.media.tmdbId);
     const prepared = existing.exists ? existing : await client.add(adding);
     if (prepared.hasFile) {
-      repository.transition(
+      return continueAfterImport(
         id,
-        'WAITING_FOR_BAZARR',
-        'system',
-        'Radarr ya contiene un archivo importado; se omitió cualquier descarga duplicada.',
-      );
-      return repository.transition(
-        id,
-        'SUBTITLES_REQUIRED',
-        'system',
-        'Archivo existente listo para la revisión manual de subtítulos.',
+        'Radarr ya contiene un archivo importado; esperando reconocimiento de Bazarr.',
       );
     }
     return repository.transition(
@@ -508,11 +552,20 @@ app.post('/api/requests/:id/radarr/refresh', async (request) => {
   return refreshRadarrRequest(id);
 });
 
+app.post('/api/requests/:id/bazarr/refresh', async (request) => {
+  const { id } = requestParams.parse(request.params);
+  return refreshBazarrRequest(id);
+});
+
 app.get('/api/requests/:id/subtitles', async (request) => {
   const { id } = requestParams.parse(request.params);
   const item = repository.get(id);
   if (!item) throw new Error('Request not found');
-  return item.mockScenario === 'no-subtitles' ? [] : subtitles.search(item);
+  if (item.state !== 'SUBTITLES_REQUIRED') {
+    throw new Error(`Invalid subtitle search while in ${item.state}`);
+  }
+  const target = await subtitleTargetFor(item);
+  return item.mockScenario === 'no-subtitles' ? [] : subtitles.search(item, target);
 });
 
 app.post('/api/requests/:id/subtitles/select', async (request) => {
@@ -520,10 +573,11 @@ app.post('/api/requests/:id/subtitles/select', async (request) => {
   const { candidateId, episodeId } = subtitleSelectionSchema.parse(request.body);
   const item = repository.get(id);
   if (!item) throw new Error('Request not found');
-  const candidates = await subtitles.search(item);
-  const selected = candidates.find((candidate) => candidate.id === candidateId);
-  if (!selected) throw new Error('Subtitle not found');
-  await subtitles.download(selected);
+  if (item.state !== 'SUBTITLES_REQUIRED') {
+    throw new Error(`Invalid subtitle selection while in ${item.state}`);
+  }
+  const target = await subtitleTargetFor(item);
+  const selected = await subtitles.download(item, target, candidateId);
   if (item.media.type === 'series') {
     if (!episodeId) throw new Error('Episode id is required for a series');
     repository.setEpisodeState(id, episodeId, 'READY', selected.id);
@@ -540,6 +594,37 @@ app.post('/api/requests/:id/subtitles/select', async (request) => {
     'VERIFYING_JELLYFIN',
     'admin',
     `Subtítulo seleccionado manualmente: ${selected.language} · ${selected.provider}`,
+  );
+});
+
+app.post('/api/requests/:id/subtitles/retry', async (request) => {
+  const { id } = requestParams.parse(request.params);
+  const item = repository.get(id);
+  if (!item) throw new Error('Request not found');
+  if (item.state !== 'SUBTITLES_REQUIRED') {
+    throw new Error(`Invalid subtitle retry while in ${item.state}`);
+  }
+  if (!bazarrConfigured) repository.setScenario(id, 'none', 'system');
+  return repository.recordEvent(
+    id,
+    'admin',
+    'Búsqueda manual de subtítulos solicitada nuevamente.',
+  );
+});
+
+app.post('/api/requests/:id/subtitles/reopen', async (request) => {
+  const { id } = requestParams.parse(request.params);
+  const item = repository.get(id);
+  if (!item) throw new Error('Request not found');
+  if (item.state !== 'VERIFYING_JELLYFIN') {
+    throw new Error(`Invalid subtitle replacement while in ${item.state}`);
+  }
+  repository.setSubtitle(id, null);
+  return repository.transition(
+    id,
+    'SUBTITLES_REQUIRED',
+    'admin',
+    'Reemplazo manual de subtítulo solicitado.',
   );
 });
 
@@ -880,7 +965,9 @@ app.setErrorHandler((error, _request, reply) => {
   const message = error instanceof Error ? error.message : 'Unknown request error';
   const name = error instanceof Error ? error.name : 'UnknownError';
   const status =
-    error instanceof RadarrHttpError || error instanceof QBittorrentHttpError
+    error instanceof RadarrHttpError ||
+    error instanceof QBittorrentHttpError ||
+    error instanceof BazarrHttpError
       ? 502
       : name === 'TimeoutError'
         ? 504

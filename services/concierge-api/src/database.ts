@@ -258,7 +258,7 @@ export class RequestRepository {
     return this.require(id);
   }
 
-  setSubtitle(id: string, subtitleId: string): MediaRequest {
+  setSubtitle(id: string, subtitleId: string | null): MediaRequest {
     this.database
       .prepare('UPDATE requests SET selected_subtitle_id = ? WHERE id = ?')
       .run(subtitleId, id);

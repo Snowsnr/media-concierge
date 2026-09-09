@@ -8,6 +8,7 @@ import type {
   MediaRequest,
   ReleaseCandidate,
   SubtitleCandidate,
+  SubtitleConfiguration,
   TorrentConfiguration,
   TorrentTelemetry,
 } from '@media-concierge/shared';
@@ -50,8 +51,19 @@ export interface TorrentClient {
 
 export interface SubtitleClient {
   health(): Promise<HealthCheck>;
-  search(request: MediaRequest): Promise<SubtitleCandidate[]>;
-  download(candidate: SubtitleCandidate): Promise<void>;
+  configuration(): Promise<SubtitleConfiguration>;
+  isRecognized(target: SubtitleTarget): Promise<boolean>;
+  search(request: MediaRequest, target?: SubtitleTarget): Promise<SubtitleCandidate[]>;
+  download(
+    request: MediaRequest,
+    target: SubtitleTarget | undefined,
+    candidateId: string,
+  ): Promise<SubtitleCandidate>;
+}
+
+export interface SubtitleTarget {
+  kind: 'movie' | 'episode';
+  externalId: number;
 }
 
 export interface MediaServerClient {

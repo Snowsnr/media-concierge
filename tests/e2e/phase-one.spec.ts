@@ -35,6 +35,9 @@ test('the administrator manually completes the simulated movie workflow', async 
   }
   await expect(page.getByRole('heading', { name: 'Elige un subtítulo' })).toBeVisible();
   await page.getByRole('button', { name: 'Seleccionar' }).first().click();
+  await page.getByRole('button', { name: 'Buscar otro subtítulo' }).click();
+  await expect(page.getByRole('heading', { name: 'Elige un subtítulo' })).toBeVisible();
+  await page.getByRole('button', { name: 'Seleccionar' }).first().click();
   await page.getByRole('button', { name: 'Verificar disponibilidad' }).click();
 
   await expect(page.getByRole('heading', { name: 'Disponible en Jellyfin' })).toBeVisible();

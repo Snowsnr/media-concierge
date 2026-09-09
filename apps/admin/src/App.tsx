@@ -11,6 +11,7 @@ import type {
   ReleaseCandidate,
   RequestState,
   SubtitleCandidate,
+  SubtitleConfiguration,
   TorrentConfiguration,
 } from '@media-concierge/shared';
 import { Button, EmptyState, StatusPill } from '@media-concierge/ui';
@@ -203,31 +204,45 @@ function RequestWorkspace() {
   const [item, setItem] = useState<MediaRequest | null>(null);
   const [releases, setReleases] = useState<ReleaseCandidate[]>([]);
   const [subtitleOptions, setSubtitleOptions] = useState<SubtitleCandidate[]>([]);
+  const [subtitlesLoading, setSubtitlesLoading] = useState(false);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [radarrLive, setRadarrLive] = useState(false);
   const [qbittorrentLive, setQbittorrentLive] = useState(false);
+  const [bazarrLive, setBazarrLive] = useState(false);
   const load = useCallback(async () => {
     if (!id) return;
     const result = await api.getRequest(id);
     setItem(result);
     if (result.state === 'SELECTING_RELEASE') setReleases(await api.releases(id));
-    if (result.state === 'SUBTITLES_REQUIRED') setSubtitleOptions(await api.subtitles(id));
+    if (result.state === 'SUBTITLES_REQUIRED') {
+      setSubtitlesLoading(true);
+      try {
+        setSubtitleOptions(await api.subtitles(id));
+      } finally {
+        setSubtitlesLoading(false);
+      }
+    } else {
+      setSubtitleOptions([]);
+      setSubtitlesLoading(false);
+    }
   }, [id]);
   useEffect(() => {
     load().catch((reason: Error) => setError(reason.message));
   }, [load]);
   useEffect(() => {
-    Promise.all([api.radarrConfiguration(), api.qbittorrentConfiguration()])
-      .then(([radarrConfiguration, qbittorrentConfiguration]) => {
-        setRadarrLive(radarrConfiguration.mode === 'radarr');
-        setQbittorrentLive(qbittorrentConfiguration.mode === 'qbittorrent');
-      })
-      .catch(() => {
-        setRadarrLive(false);
-        setQbittorrentLive(false);
-      });
+    Promise.allSettled([
+      api.radarrConfiguration(),
+      api.qbittorrentConfiguration(),
+      api.bazarrConfiguration(),
+    ]).then(([radarrResult, qbittorrentResult, bazarrResult]) => {
+      setRadarrLive(radarrResult.status === 'fulfilled' && radarrResult.value.mode === 'radarr');
+      setQbittorrentLive(
+        qbittorrentResult.status === 'fulfilled' && qbittorrentResult.value.mode === 'qbittorrent',
+      );
+      setBazarrLive(bazarrResult.status === 'fulfilled' && bazarrResult.value.mode === 'bazarr');
+    });
   }, []);
   useEffect(() => {
     if (
@@ -250,6 +265,24 @@ function RequestWorkspace() {
     );
     return () => window.clearInterval(interval);
   }, [busy, id, item?.media.type, item?.state, load, qbittorrentLive, radarrLive]);
+  useEffect(() => {
+    if (
+      !id ||
+      !bazarrLive ||
+      busy ||
+      item?.media.type !== 'movie' ||
+      item.state !== 'WAITING_FOR_BAZARR'
+    ) {
+      return;
+    }
+    const interval = window.setInterval(() => {
+      void api
+        .refreshBazarr(id)
+        .then(() => load())
+        .catch((reason: Error) => setError(reason.message));
+    }, 5_000);
+    return () => window.clearInterval(interval);
+  }, [bazarrLive, busy, id, item?.media.type, item?.state, load]);
   const act = async (task: () => Promise<MediaRequest>) => {
     setBusy(true);
     setError('');
@@ -309,12 +342,14 @@ function RequestWorkspace() {
             item={item}
             releases={releases}
             subtitles={subtitleOptions}
+            subtitlesLoading={subtitlesLoading}
             note={note}
             setNote={setNote}
             busy={busy}
             act={act}
             radarrLive={radarrLive}
             qbittorrentLive={qbittorrentLive}
+            bazarrLive={bazarrLive}
           />
         </section>
         <aside className="context-column">
@@ -343,22 +378,26 @@ function Workflow({
   item,
   releases,
   subtitles,
+  subtitlesLoading,
   note,
   setNote,
   busy,
   act,
   radarrLive,
   qbittorrentLive,
+  bazarrLive,
 }: {
   item: MediaRequest;
   releases: ReleaseCandidate[];
   subtitles: SubtitleCandidate[];
+  subtitlesLoading: boolean;
   note: string;
   setNote: (value: string) => void;
   busy: boolean;
   act: (task: () => Promise<MediaRequest>) => Promise<void>;
   radarrLive: boolean;
   qbittorrentLive: boolean;
+  bazarrLive: boolean;
 }) {
   const liveTorrent = qbittorrentLive && radarrLive && item.media.type === 'movie';
   if (pendingStates.includes(item.state))
@@ -567,15 +606,47 @@ function Workflow({
         </Button>
       </div>
     );
+  if (item.state === 'WAITING_FOR_BAZARR')
+    return (
+      <div>
+        <span className="step-label">Paso 4 · Sincronización</span>
+        <h2>Esperando a Bazarr</h2>
+        <p className="workflow-copy">
+          {bazarrLive && item.media.type === 'movie'
+            ? 'La película ya fue importada. Bazarr debe reconocerla antes de habilitar la búsqueda manual.'
+            : 'Preparando el selector simulado de subtítulos.'}
+        </p>
+        <div className="verification-box warning-box">
+          <span>◷</span>
+          <div>
+            <strong>Sin mover archivos manualmente</strong>
+            <p>La comprobación se repite automáticamente y puede tardar algunos segundos.</p>
+          </div>
+        </div>
+        <Button disabled={busy} onClick={() => act(() => api.refreshBazarr(item.id))}>
+          Comprobar ahora
+        </Button>
+      </div>
+    );
   if (item.state === 'SUBTITLES_REQUIRED')
     return (
       <div>
         <span className="step-label">Paso 4 · Subtítulos</span>
         <h2>Elige un subtítulo</h2>
         <p className="workflow-copy">
-          Modo manual total: cada resultado explica coincidencias y diferencias.
+          {bazarrLive && item.media.type === 'movie'
+            ? 'Resultados reales de Bazarr. Tú eliges cuál descargar; no se selecciona ninguno automáticamente.'
+            : 'Modo manual total: cada resultado explica coincidencias y diferencias.'}
         </p>
-        {item.media.type === 'series' ? (
+        {subtitlesLoading ? (
+          <div className="verification-box warning-box">
+            <span>◷</span>
+            <div>
+              <strong>Buscando en los proveedores</strong>
+              <p>Una búsqueda manual de Bazarr puede tardar varios segundos.</p>
+            </div>
+          </div>
+        ) : item.media.type === 'series' ? (
           <SeriesSubtitleMatrix item={item} subtitles={subtitles} busy={busy} act={act} />
         ) : subtitles.length ? (
           <SubtitleList
@@ -584,7 +655,7 @@ function Workflow({
             onSelect={(candidateId) => act(() => api.selectSubtitle(item.id, candidateId))}
           />
         ) : (
-          <NoSubtitles item={item} busy={busy} act={act} />
+          <NoSubtitles item={item} busy={busy} act={act} liveBazarr={bazarrLive} />
         )}
       </div>
     );
@@ -594,7 +665,9 @@ function Workflow({
         <span className="step-label">Paso 5 · Verificación final</span>
         <h2>Confirmar en Jellyfin</h2>
         <p className="workflow-copy">
-          El mock simula una consulta de disponibilidad. No reinicia ni detiene Jellyfin.
+          {bazarrLive && item.media.type === 'movie'
+            ? 'Bazarr confirmó que el subtítulo elegido fue guardado. Falta verificar la película en Jellyfin.'
+            : 'El mock simula una consulta de disponibilidad. No reinicia ni detiene Jellyfin.'}
         </p>
         <div className="verification-box">
           <span>◉</span>
@@ -605,6 +678,13 @@ function Workflow({
         </div>
         <Button disabled={busy} onClick={() => act(() => api.verify(item.id))}>
           Verificar disponibilidad
+        </Button>
+        <Button
+          variant="secondary"
+          disabled={busy}
+          onClick={() => act(() => api.reopenSubtitles(item.id))}
+        >
+          Buscar otro subtítulo
         </Button>
       </div>
     );
@@ -855,9 +935,20 @@ function SubtitleList({
             <p>
               {subtitle.provider} · {subtitle.uploader}
             </p>
+            <p className="subtitle-release">{subtitle.release}</p>
+            <div className="subtitle-flags">
+              {subtitle.hearingImpaired && <span>Audición asistida</span>}
+              {subtitle.forced && <span>Forzado</span>}
+              {!subtitle.hearingImpaired && !subtitle.forced && <span>Estándar</span>}
+            </div>
           </div>
           <div className="match-list">
-            <span>✓ {subtitle.matches.join(' · ')}</span>
+            <span>
+              ✓{' '}
+              {subtitle.matches.length
+                ? subtitle.matches.join(' · ')
+                : 'Sin coincidencias indicadas'}
+            </span>
             {subtitle.mismatches.map((mismatch) => (
               <span className="mismatch" key={mismatch}>
                 △ {mismatch}
@@ -877,17 +968,24 @@ function NoSubtitles({
   item,
   busy,
   act,
+  liveBazarr,
 }: {
   item: MediaRequest;
   busy: boolean;
   act: (task: () => Promise<MediaRequest>) => Promise<void>;
+  liveBazarr: boolean;
 }) {
   return (
     <div className="no-results">
       <span>CC</span>
       <h3>No se encontraron subtítulos</h3>
       <p>Este fallo es temporal y puede reintentarse sin perder la solicitud.</p>
-      <Button disabled={busy} onClick={() => act(() => api.setScenario(item.id, 'none'))}>
+      <Button
+        disabled={busy}
+        onClick={() =>
+          act(() => (liveBazarr ? api.retrySubtitles(item.id) : api.setScenario(item.id, 'none')))
+        }
+      >
         Reintentar búsqueda
       </Button>
     </div>
@@ -1136,15 +1234,28 @@ function HealthPage() {
   const [checks, setChecks] = useState<HealthCheck[]>([]);
   const [radarrConfig, setRadarrConfig] = useState<ArrConfiguration | null>(null);
   const [torrentConfig, setTorrentConfig] = useState<TorrentConfiguration | null>(null);
+  const [subtitleConfig, setSubtitleConfig] = useState<SubtitleConfiguration | null>(null);
   const [error, setError] = useState('');
   useEffect(() => {
-    Promise.all([api.health(), api.radarrConfiguration(), api.qbittorrentConfiguration()])
-      .then(([nextChecks, configuration, nextTorrentConfiguration]) => {
-        setChecks(nextChecks);
-        setRadarrConfig(configuration);
-        setTorrentConfig(nextTorrentConfiguration);
-      })
-      .catch((reason: Error) => setError(reason.message));
+    Promise.allSettled([
+      api.health(),
+      api.radarrConfiguration(),
+      api.qbittorrentConfiguration(),
+      api.bazarrConfiguration(),
+    ]).then(([healthResult, radarrResult, torrentResult, subtitleResult]) => {
+      if (healthResult.status === 'fulfilled') setChecks(healthResult.value);
+      if (radarrResult.status === 'fulfilled') setRadarrConfig(radarrResult.value);
+      if (torrentResult.status === 'fulfilled') setTorrentConfig(torrentResult.value);
+      if (subtitleResult.status === 'fulfilled') setSubtitleConfig(subtitleResult.value);
+      const failure = [healthResult, radarrResult, torrentResult, subtitleResult].find(
+        (result) => result.status === 'rejected',
+      );
+      if (failure?.status === 'rejected') {
+        setError(
+          failure.reason instanceof Error ? failure.reason.message : 'Una integración falló.',
+        );
+      }
+    });
   }, []);
   return (
     <div className="admin-page">
@@ -1262,6 +1373,44 @@ function HealthPage() {
                 <span>Autenticación</span>
                 <strong>
                   {torrentConfig.authMode === 'api-key' ? 'API key' : 'Usuario y contraseña'}
+                </strong>
+              </div>
+            </div>
+          )}
+        </section>
+      )}
+      {subtitleConfig && (
+        <section className="radarr-config-card">
+          <div className="radarr-config-heading">
+            <div>
+              <span className="kicker">Fase 6 · Subtítulos</span>
+              <h2>
+                {subtitleConfig.mode === 'bazarr' ? 'Configuración de Bazarr' : 'Bazarr simulado'}
+              </h2>
+            </div>
+            <code>{subtitleConfig.configured ? 'LISTO' : 'SIN BÚSQUEDA REAL'}</code>
+          </div>
+          {subtitleConfig.issues.length > 0 && (
+            <ul>
+              {subtitleConfig.issues.map((issue) => (
+                <li key={issue}>{issue}</li>
+              ))}
+            </ul>
+          )}
+          {subtitleConfig.mode === 'bazarr' && (
+            <div className="radarr-config-grid">
+              <div>
+                <span>Versión</span>
+                <strong>{subtitleConfig.version ?? 'No indicada'}</strong>
+              </div>
+              <div>
+                <span>Autenticación</span>
+                <strong>API key privada</strong>
+              </div>
+              <div>
+                <span>Selección</span>
+                <strong>
+                  {subtitleConfig.manualSelection ? 'Manual obligatoria' : 'Automática'}
                 </strong>
               </div>
             </div>

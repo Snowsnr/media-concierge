@@ -29,9 +29,13 @@ The private API supports Radarr v3 health and configuration discovery, TMDB dupl
 
 The private API supports qBittorrent API-key and legacy session authentication, exact hash correlation, persisted progress/size/speed/ETA/seeds/peers/availability/ratio telemetry, sanitized tracker health, stalled/error detection, pause/resume/reannounce controls, and Radarr-coordinated cancellation with optional blocklisting and partial-data handling. Read-only telemetry, persistence across API restarts, pause/resume/reannounce, completed-download import tracking, and an explicitly authorized release-removal/blocklist recovery were validated end to end against the homelab.
 
-## Phases 6–7 — remaining movie workflow
+## Phase 6 — Bazarr movies (adapter ready; homelab validation pending)
 
-Introduce real adapters in order: manual Bazarr subtitle choice, then Jellyfin availability verification. Each adapter lands behind contract tests and mock parity before an explicitly authorized homelab smoke test.
+The private API now waits for Bazarr to recognize an imported Radarr movie, performs a real manual provider search, exposes sanitized score-sorted candidates, downloads only the administrator's explicit choice, confirms the saved subtitle, and permits a replacement search. The adapter uses header-only API-key authentication, bounded requests, runtime response validation, opaque cache-token protection, contract tests, and mock parity. Phase 6 closes after an explicitly authorized homelab check.
+
+## Phase 7 — Jellyfin
+
+Introduce real availability verification and a safe library refresh request when necessary. The adapter must land behind contract tests and mock parity before an explicitly authorized homelab smoke test; Media Concierge will never restart Jellyfin.
 
 ## Phase 8 — series
 

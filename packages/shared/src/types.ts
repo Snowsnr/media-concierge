@@ -316,6 +316,15 @@ export interface SubtitleCandidate {
   uploader: string;
 }
 
+export interface SubtitleConfiguration {
+  mode: 'mock' | 'bazarr';
+  configured: boolean;
+  version: string | null;
+  authMode: 'mock' | 'api-key';
+  manualSelection: boolean;
+  issues: string[];
+}
+
 export type DownloadControlAction = 'pause' | 'resume' | 'reannounce' | 'retry-release' | 'cancel';
 
 export interface HealthCheck {

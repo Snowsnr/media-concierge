@@ -42,6 +42,6 @@ Approval may add the movie to Radarr, but Media Concierge sends `searchForMovie:
 
 Back up Radarr's configuration before the first write check. Automated tests use a fake Radarr transport and never delete or mutate homelab data.
 
-## Current Phase 4 boundary
+## Current integration boundary
 
-Media Concierge reads download/import state through Radarr's queue. Detailed qBittorrent telemetry and controls are Phase 5; real Bazarr subtitle selection and Jellyfin verification arrive in Phases 6 and 7. Until those adapters land, the flow continues with the existing safe simulations after Radarr reports the import.
+Media Concierge reads download/import state through Radarr's queue. Detailed qBittorrent telemetry and controls are implemented in Phase 5, and the Phase 6 Bazarr adapter takes over after Radarr reports the import. Jellyfin availability verification remains simulated until Phase 7.

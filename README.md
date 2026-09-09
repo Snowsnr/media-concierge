@@ -2,7 +2,7 @@
 
 Media Concierge coordinates family movie and series requests with a private homelab while keeping the administrator in control. The public portal can only create requests; it can never start a download or reach private services.
 
-This repository contains **Phases 0–5**, including validated private Radarr and qBittorrent integrations. The complete simulated workflow still works without credentials, while the public portal, broker, accounts, and notifications can be activated with Supabase and TMDB configuration. Radarr and qBittorrent are opt-in and private; Sonarr, Bazarr, and Jellyfin remain simulated.
+This repository contains **Phases 0–5**, including validated private Radarr and qBittorrent integrations, plus the safe Bazarr foundation for **Phase 6**. The complete simulated workflow still works without credentials, while the public portal, broker, accounts, and notifications can be activated with Supabase and TMDB configuration. Radarr, qBittorrent, and Bazarr are opt-in and private; Sonarr and Jellyfin remain simulated.
 
 ## What works now
 
@@ -21,6 +21,7 @@ This repository contains **Phases 0–5**, including validated private Radarr an
 - Admin alerts for new requests and family alerts for approval, clarification, ready, rejection, and failure—never every progress update.
 - Opt-in Radarr v3 adapter with health/configuration checks, duplicate detection, add-without-search, interactive release inspection, explicit manual grab, and queue/import tracking.
 - Opt-in qBittorrent WebAPI adapter with API-key/session authentication, real telemetry, pause/resume/reannounce controls, tracker-passkey redaction, and Radarr-coordinated cancellation.
+- Opt-in Bazarr adapter with synchronization polling, manual score-sorted subtitle search, explicit download, saved-file confirmation, and replacement support for movies.
 - GitHub Pages workflow for publishing only the family portal at `pedidos.diegohomelab.fyi`.
 - Development Docker Compose file and architecture/security/roadmap documentation.
 

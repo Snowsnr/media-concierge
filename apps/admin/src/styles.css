@@ -772,6 +772,23 @@ button {
   color: var(--muted);
   font-size: 9px;
 }
+.subtitle-card .subtitle-release {
+  overflow-wrap: anywhere;
+  color: var(--ink);
+}
+.subtitle-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 7px;
+}
+.subtitle-flags span {
+  padding: 4px 6px;
+  border-radius: 5px;
+  background: #efebe4;
+  color: #625e66;
+  font-size: 8px;
+}
 .score-badge {
   display: inline-grid;
   place-items: center;

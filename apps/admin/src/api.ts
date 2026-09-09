@@ -12,6 +12,7 @@ import type {
   NotificationConfig,
   ReleaseCandidate,
   SubtitleCandidate,
+  SubtitleConfiguration,
   TorrentConfiguration,
 } from '@media-concierge/shared';
 
@@ -68,6 +69,10 @@ export const api = {
       queue: ArrQueueStatus | null;
     }>(`/api/requests/${id}/radarr`),
   refreshRadarr: (id: string) => post<MediaRequest>(`/api/requests/${id}/radarr/refresh`),
+  bazarrConfiguration: () => request<SubtitleConfiguration>('/api/integrations/bazarr'),
+  refreshBazarr: (id: string) => post<MediaRequest>(`/api/requests/${id}/bazarr/refresh`),
+  retrySubtitles: (id: string) => post<MediaRequest>(`/api/requests/${id}/subtitles/retry`),
+  reopenSubtitles: (id: string) => post<MediaRequest>(`/api/requests/${id}/subtitles/reopen`),
   reset: () => post<MediaRequest[]>('/api/demo/reset'),
   invitations: () => request<InvitationSummary[]>('/api/invitations'),
   createInvitation: (label: string, expiresInDays: number) =>
