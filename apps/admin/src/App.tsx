@@ -36,6 +36,13 @@ const pendingStates: RequestState[] = ['REQUESTED', 'SYNCED_TO_HOMELAB', 'NEEDS_
 
 export function App() {
   const navigate = useNavigate();
+  const [demoResetEnabled, setDemoResetEnabled] = useState(false);
+  useEffect(() => {
+    api
+      .demoStatus()
+      .then(({ resetEnabled }) => setDemoResetEnabled(resetEnabled))
+      .catch(() => setDemoResetEnabled(false));
+  }, []);
   const reset = async () => {
     if (
       !window.confirm(
@@ -86,9 +93,11 @@ export function App() {
           <div>
             <span className="online-dot" /> Concierge privado
           </div>
-          <Button variant="ghost" onClick={reset}>
-            Restablecer demo
-          </Button>
+          {demoResetEnabled && (
+            <Button variant="ghost" onClick={reset}>
+              Restablecer demo
+            </Button>
+          )}
         </header>
         <main>
           <Routes>

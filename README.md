@@ -45,7 +45,7 @@ Open:
 - Admin panel: <http://localhost:5174>
 - API health: <http://localhost:4100/health>
 
-The first API start creates `data/media-concierge.db` and seeds one demo request. Use **Restablecer demo** in the admin header to return to that state.
+The first API start creates `services/concierge-api/data/media-concierge.db` and seeds demo requests. The database path is anchored to the API package so it does not change with the launch directory. Browser tests always use a separate ignored database. **Restablecer demo** is hidden and rejected by the API unless `MEDIA_CONCIERGE_DEMO_RESET_ENABLED=1`; keep it disabled for real homelab use.
 
 ## Quality checks
 

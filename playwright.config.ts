@@ -1,4 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
+import { join } from 'node:path';
+
+const e2eDatabasePath = join(process.cwd(), 'services/concierge-api/data/media-concierge.e2e.db');
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -22,10 +25,12 @@ export default defineConfig({
       url: 'http://127.0.0.1:4110/health',
       env: {
         CONCIERGE_API_PORT: '4110',
+        CONCIERGE_DB_PATH: e2eDatabasePath,
         CORS_ORIGINS: 'http://127.0.0.1:5175,http://127.0.0.1:5176',
+        MEDIA_CONCIERGE_DEMO_RESET_ENABLED: '1',
         MEDIA_CONCIERGE_SKIP_ENV_FILE: '1',
       },
-      reuseExistingServer: true,
+      reuseExistingServer: false,
       timeout: 120_000,
     },
     {

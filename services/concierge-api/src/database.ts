@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import {
   assertTransition,
   publicStatusFor,
@@ -56,10 +57,12 @@ export interface CreateRequestInput {
   idempotencyKey: string;
 }
 
+const defaultDatabasePath = fileURLToPath(new URL('../data/media-concierge.db', import.meta.url));
+
 export class RequestRepository {
   private readonly database: DatabaseSync;
 
-  constructor(path = process.env.CONCIERGE_DB_PATH ?? './data/media-concierge.db') {
+  constructor(path = process.env.CONCIERGE_DB_PATH ?? defaultDatabasePath) {
     const absolutePath = path === ':memory:' ? path : resolve(path);
     if (path !== ':memory:') mkdirSync(dirname(absolutePath), { recursive: true });
     this.database = new DatabaseSync(absolutePath);

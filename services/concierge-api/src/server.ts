@@ -90,6 +90,7 @@ const torrent: TorrentClient = qbittorrentConfigured
     })
   : mockTorrent;
 const bazarrConfigured = Boolean(process.env.BAZARR_URL && process.env.BAZARR_API_KEY);
+const demoResetEnabled = process.env.MEDIA_CONCIERGE_DEMO_RESET_ENABLED === '1';
 const mockSubtitles = new MockSubtitleClient();
 const subtitles: SubtitleClient = bazarrConfigured
   ? new BazarrClientV1({
@@ -815,7 +816,14 @@ app.post('/api/requests/:id/episodes/:episodeId', async (request) => {
   return completeSeriesIfReady(id);
 });
 
-app.post('/api/demo/reset', async () => repository.reset());
+app.get('/api/demo/status', async () => ({ resetEnabled: demoResetEnabled }));
+
+app.post('/api/demo/reset', async (_request, reply) => {
+  if (!demoResetEnabled) {
+    return reply.code(403).send({ message: 'El restablecimiento demo está desactivado.' });
+  }
+  return repository.reset();
+});
 
 const syncPublicBroker = async () => {
   if (!brokerConfigured) return { imported: 0, published: 0, mode: 'mock' as const };

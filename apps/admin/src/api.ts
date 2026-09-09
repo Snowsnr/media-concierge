@@ -75,6 +75,7 @@ export const api = {
   refreshBazarr: (id: string) => post<MediaRequest>(`/api/requests/${id}/bazarr/refresh`),
   retrySubtitles: (id: string) => post<MediaRequest>(`/api/requests/${id}/subtitles/retry`),
   reopenSubtitles: (id: string) => post<MediaRequest>(`/api/requests/${id}/subtitles/reopen`),
+  demoStatus: () => request<{ resetEnabled: boolean }>('/api/demo/status'),
   reset: () => post<MediaRequest[]>('/api/demo/reset'),
   invitations: () => request<InvitationSummary[]>('/api/invitations'),
   createInvitation: (label: string, expiresInDays: number) =>
