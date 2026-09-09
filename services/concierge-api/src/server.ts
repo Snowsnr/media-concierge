@@ -125,6 +125,7 @@ const publishPublicStatus = async <T extends ReturnType<RequestRepository['get']
 
 const requestParams = z.object({ id: z.string().uuid() });
 const selectionBody = z.object({ candidateId: z.string().min(1).max(200) });
+const existingSubtitleConfirmationBody = z.object({ confirmed: z.literal(true) });
 const episodeParams = z.object({ id: z.string().uuid(), episodeId: z.string().uuid() });
 const resetFamilyPasswordBody = z.object({ password: z.string().min(10).max(72) });
 
@@ -594,6 +595,26 @@ app.post('/api/requests/:id/subtitles/select', async (request) => {
     'VERIFYING_JELLYFIN',
     'admin',
     `Subtítulo seleccionado manualmente: ${selected.language} · ${selected.provider}`,
+  );
+});
+
+app.post('/api/requests/:id/subtitles/confirm-existing', async (request) => {
+  const { id } = requestParams.parse(request.params);
+  existingSubtitleConfirmationBody.parse(request.body);
+  const item = repository.get(id);
+  if (!item) throw new Error('Request not found');
+  if (item.media.type !== 'movie') {
+    throw new Error('Existing subtitle confirmation is only available for movies');
+  }
+  if (item.state !== 'SUBTITLES_REQUIRED') {
+    throw new Error(`Invalid existing subtitle confirmation while in ${item.state}`);
+  }
+  repository.setSubtitle(id, 'manual-confirmed-existing');
+  return repository.transition(
+    id,
+    'VERIFYING_JELLYFIN',
+    'admin',
+    'El administrador confirmó que el archivo ya incluye subtítulos; Bazarr no realizó una descarga.',
   );
 });
 

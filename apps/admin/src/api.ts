@@ -45,6 +45,8 @@ export const api = {
   subtitles: (id: string) => request<SubtitleCandidate[]>(`/api/requests/${id}/subtitles`),
   selectSubtitle: (id: string, candidateId: string, episodeId?: string) =>
     post<MediaRequest>(`/api/requests/${id}/subtitles/select`, { candidateId, episodeId }),
+  confirmExistingSubtitle: (id: string) =>
+    post<MediaRequest>(`/api/requests/${id}/subtitles/confirm-existing`, { confirmed: true }),
   verify: (id: string) => post<MediaRequest>(`/api/requests/${id}/verify`),
   setScenario: (id: string, scenario: MediaRequest['mockScenario']) =>
     post<MediaRequest>(`/api/requests/${id}/scenario`, { scenario }),

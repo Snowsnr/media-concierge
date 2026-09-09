@@ -90,8 +90,9 @@ test('simulated failures can be recovered without external services', async ({ p
 
   await page.getByLabel('Escenario simulado').selectOption({ label: 'Sin subtítulos' });
   await expect(page.getByRole('heading', { name: 'No se encontraron subtítulos' })).toBeVisible();
-  await page.getByRole('button', { name: 'Reintentar búsqueda' }).click();
-  await page.getByRole('button', { name: 'Seleccionar' }).first().click();
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: 'Ya tiene subtítulos' }).click();
+  await expect(page.getByText('Subtítulos confirmados manualmente')).toBeVisible();
 
   await page.getByLabel('Escenario simulado').selectOption({ label: 'Biblioteca demorada' });
   await page.getByRole('button', { name: 'Verificar disponibilidad' }).click();

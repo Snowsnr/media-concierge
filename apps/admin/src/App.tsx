@@ -657,6 +657,32 @@ function Workflow({
         ) : (
           <NoSubtitles item={item} busy={busy} act={act} liveBazarr={bazarrLive} />
         )}
+        {item.media.type === 'movie' && !subtitlesLoading && (
+          <div className="existing-subtitle-confirmation">
+            <div>
+              <strong>¿El archivo ya incluye subtítulos?</strong>
+              <p>
+                Puedes confirmarlo manualmente si vienen integrados en el video o los añadiste fuera
+                de Bazarr. La decisión quedará registrada en el historial.
+              </p>
+            </div>
+            <Button
+              variant="secondary"
+              disabled={busy}
+              onClick={() => {
+                if (
+                  window.confirm(
+                    'Confirma únicamente si verificaste que la película ya tiene subtítulos. Se omitirá la descarga de Bazarr y la decisión quedará registrada. ¿Continuar?',
+                  )
+                ) {
+                  void act(() => api.confirmExistingSubtitle(item.id));
+                }
+              }}
+            >
+              Ya tiene subtítulos
+            </Button>
+          </div>
+        )}
       </div>
     );
   if (item.state === 'VERIFYING_JELLYFIN')
@@ -665,14 +691,20 @@ function Workflow({
         <span className="step-label">Paso 5 · Verificación final</span>
         <h2>Confirmar en Jellyfin</h2>
         <p className="workflow-copy">
-          {bazarrLive && item.media.type === 'movie'
-            ? 'Bazarr confirmó que el subtítulo elegido fue guardado. Falta verificar la película en Jellyfin.'
-            : 'El mock simula una consulta de disponibilidad. No reinicia ni detiene Jellyfin.'}
+          {item.selectedSubtitleId === 'manual-confirmed-existing'
+            ? 'Confirmaste manualmente que la película ya incluye subtítulos. Falta verificar que aparezca en Jellyfin.'
+            : bazarrLive && item.media.type === 'movie'
+              ? 'Bazarr confirmó que el subtítulo elegido fue guardado. Falta verificar la película en Jellyfin.'
+              : 'El mock simula una consulta de disponibilidad. No reinicia ni detiene Jellyfin.'}
         </p>
         <div className="verification-box">
           <span>◉</span>
           <div>
-            <strong>Archivo y subtítulo listos</strong>
+            <strong>
+              {item.selectedSubtitleId === 'manual-confirmed-existing'
+                ? 'Subtítulos confirmados manualmente'
+                : 'Archivo y subtítulo listos'}
+            </strong>
             <p>Esperando confirmación lógica del servidor multimedia.</p>
           </div>
         </div>

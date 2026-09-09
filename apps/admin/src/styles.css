@@ -828,6 +828,23 @@ button {
   color: var(--muted);
   font-size: 10px;
 }
+.existing-subtitle-confirmation {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 15px;
+  margin-top: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #faf8f3;
+}
+.existing-subtitle-confirmation p {
+  max-width: 520px;
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 10px;
+}
 .warning-box {
   border-color: #ead7a4;
   background: #fff9e9;
@@ -1348,6 +1365,10 @@ button {
   }
   .subtitle-card {
     grid-template-columns: 1fr;
+  }
+  .existing-subtitle-confirmation {
+    align-items: stretch;
+    flex-direction: column;
   }
   .health-grid {
     grid-template-columns: 1fr;
