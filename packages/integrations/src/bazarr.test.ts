@@ -102,7 +102,16 @@ describe('BazarrClientV1', () => {
     expect(JSON.stringify(results)).not.toContain('provider.invalid');
   });
 
-  it('downloads only a freshly searched choice and confirms the saved subtitle', async () => {
+  it('explains when a recognized movie has no language profile', async () => {
+    const fetcher = vi.fn(async () =>
+      json({ data: [{ radarrId: 42, profileId: null, subtitles: [] }], total: 1 }),
+    ) as typeof fetch;
+    const client = new BazarrClientV1({ baseUrl: 'http://bazarr:6767', apiKey, fetch: fetcher });
+
+    await expect(client.search(request, target)).rejects.toThrow(/perfil de idioma/);
+  });
+
+  it('downloads only a freshly searched choice and polls until Bazarr indexes the subtitle', async () => {
     const calls: { path: string; body: string }[] = [];
     let movieReads = 0;
     const fetcher = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
@@ -111,8 +120,16 @@ describe('BazarrClientV1', () => {
         movieReads += 1;
         return json(
           movie(
-            movieReads >= 2
-              ? [{ name: 'Spanish', path: '/hidden/movie.es.srt', forced: false, hi: false }]
+            movieReads >= 3
+              ? [
+                  {
+                    name: 'Spanish (Latino)',
+                    code2: 'ea',
+                    path: '/hidden/movie.ea.srt',
+                    forced: false,
+                    hi: false,
+                  },
+                ]
               : [],
           ),
         );
@@ -124,7 +141,7 @@ describe('BazarrClientV1', () => {
               dont_matches: [],
               forced: 'False',
               hearing_impaired: 'False',
-              language: 'Spanish',
+              language: 'Spanish (Latin America)',
               matches: ['hash'],
               original_format: 'True',
               provider: 'SubDL',
@@ -139,7 +156,13 @@ describe('BazarrClientV1', () => {
       calls.push({ path: url.pathname, body: String(init?.body ?? '') });
       return new Response(null, { status: 204 });
     }) as typeof fetch;
-    const client = new BazarrClientV1({ baseUrl: 'http://bazarr:6767', apiKey, fetch: fetcher });
+    const client = new BazarrClientV1({
+      baseUrl: 'http://bazarr:6767',
+      apiKey,
+      fetch: fetcher,
+      confirmationTimeoutMs: 100,
+      confirmationPollIntervalMs: 1,
+    });
     const [candidate] = await client.search(request, target);
 
     await expect(client.download(request, target, '0'.repeat(64))).rejects.toThrow(
@@ -147,9 +170,10 @@ describe('BazarrClientV1', () => {
     );
     await expect(client.download(request, target, candidate!.id)).resolves.toMatchObject({
       id: candidate!.id,
-      language: 'Spanish',
+      language: 'Spanish (Latin America)',
       provider: 'SubDL',
     });
+    expect(movieReads).toBeGreaterThanOrEqual(3);
     expect(calls).toHaveLength(1);
     expect(calls[0]?.path).toBe('/api/providers/movies');
     expect(new URLSearchParams(calls[0]?.body).get('subtitle')).toBe('private-cache-token');

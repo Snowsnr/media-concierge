@@ -14,6 +14,8 @@ const statusSchema = z.object({
 
 const savedSubtitleSchema = z
   .object({
+    code2: z.string().max(20).nullable().optional(),
+    code3: z.string().max(20).nullable().optional(),
     name: z.string().max(200).nullable().optional(),
     path: z.string().max(4_000).nullable().optional(),
     forced: z.boolean().nullable().optional().default(false),
@@ -75,6 +77,8 @@ export interface BazarrClientOptions {
   baseUrl: string;
   apiKey: string;
   timeoutMs?: number;
+  confirmationTimeoutMs?: number;
+  confirmationPollIntervalMs?: number;
   fetch?: typeof fetch;
 }
 
@@ -111,7 +115,26 @@ const matchLabel = (value: string) =>
   matchLabels[value.toLowerCase()] ?? value.replaceAll('_', ' ');
 
 const normalizedLanguage = (value: string | null | undefined) =>
-  (value ?? '').trim().toLocaleLowerCase('en-US');
+  (value ?? '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/gi, ' ')
+    .trim()
+    .toLocaleLowerCase('en-US');
+
+const canonicalLanguage = (value: string | null | undefined) => {
+  const normalized = normalizedLanguage(value);
+  if (!normalized) return '';
+  if (
+    normalized === 'ea' ||
+    (normalized.includes('spanish') &&
+      (normalized.includes('latin') || normalized.includes('latino')))
+  ) {
+    return 'spanish-latin-america';
+  }
+  if (normalized === 'es' || normalized === 'spa' || normalized === 'spanish') return 'spanish';
+  return normalized;
+};
 
 export class BazarrHttpError extends Error {
   constructor(
@@ -127,6 +150,8 @@ export class BazarrClientV1 implements SubtitleClient {
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
   private readonly statusTimeoutMs: number;
+  private readonly confirmationTimeoutMs: number;
+  private readonly confirmationPollIntervalMs: number;
   private readonly fetcher: typeof fetch;
   private readonly choices = new Map<string, Map<string, StoredChoice>>();
 
@@ -136,6 +161,8 @@ export class BazarrClientV1 implements SubtitleClient {
     if (!/^[A-Za-z0-9_-]{8,256}$/.test(apiKey)) throw new Error('BAZARR_API_KEY is invalid.');
     this.timeoutMs = options.timeoutMs ?? 90_000;
     this.statusTimeoutMs = Math.min(this.timeoutMs, 15_000);
+    this.confirmationTimeoutMs = Math.max(0, options.confirmationTimeoutMs ?? 30_000);
+    this.confirmationPollIntervalMs = Math.max(1, options.confirmationPollIntervalMs ?? 750);
     this.fetcher = options.fetch ?? fetch;
   }
 
@@ -180,8 +207,12 @@ export class BazarrClientV1 implements SubtitleClient {
   async search(request: MediaRequest, target?: SubtitleTarget): Promise<SubtitleCandidate[]> {
     const movieTarget = this.requiredMovieTarget(target);
     if (request.media.type !== 'movie') throw new Error('Bazarr Phase 6 only accepts movies.');
-    if (!(await this.movie(movieTarget))) {
+    const movie = await this.movie(movieTarget);
+    if (!movie) {
       throw new Error('Bazarr todavía no reconoce esta película de Radarr.');
+    }
+    if (!movie.profileId) {
+      throw new Error('Asigna un perfil de idioma a esta película dentro de Bazarr.');
     }
     const query = new URLSearchParams({ radarrid: String(movieTarget.externalId) });
     const response = await this.json(
@@ -262,26 +293,37 @@ export class BazarrClientV1 implements SubtitleClient {
       },
       'descarga manual de subtítulo',
     );
-    const movie = await this.movie(movieTarget);
-    const expectedLanguage = normalizedLanguage(choice.result.language);
+    const deadline = Date.now() + this.confirmationTimeoutMs;
+    const expectedLanguage = canonicalLanguage(choice.result.language);
     const expectedForced = booleanLike(choice.result.forced);
     const expectedHi = booleanLike(choice.result.hearing_impaired);
-    const saved = movie?.subtitles?.some((subtitle) => {
-      const savedLanguage = normalizedLanguage(subtitle.name);
-      const sameLanguage =
-        savedLanguage === expectedLanguage ||
-        savedLanguage.includes(expectedLanguage) ||
-        expectedLanguage.includes(savedLanguage);
-      return Boolean(
-        subtitle.path &&
-        savedLanguage &&
-        expectedLanguage &&
-        sameLanguage &&
-        Boolean(subtitle.forced) === expectedForced &&
-        Boolean(subtitle.hi) === expectedHi,
+    let saved = false;
+    do {
+      const movie = await this.movie(movieTarget);
+      saved = Boolean(
+        movie?.subtitles?.some((subtitle) => {
+          const savedLanguages = [subtitle.name, subtitle.code2, subtitle.code3]
+            .map(canonicalLanguage)
+            .filter(Boolean);
+          return Boolean(
+            subtitle.path &&
+            expectedLanguage &&
+            savedLanguages.includes(expectedLanguage) &&
+            Boolean(subtitle.forced) === expectedForced &&
+            Boolean(subtitle.hi) === expectedHi,
+          );
+        }),
       );
-    });
-    if (!saved) throw new Error('Bazarr respondió, pero no confirmó el subtítulo guardado.');
+      if (saved || Date.now() >= deadline) break;
+      await new Promise((resolve) =>
+        setTimeout(resolve, Math.min(this.confirmationPollIntervalMs, deadline - Date.now())),
+      );
+    } while (Date.now() <= deadline);
+    if (!saved) {
+      throw new Error(
+        'Bazarr aceptó la descarga, pero el archivo todavía no aparece en su índice. Reintenta la comprobación.',
+      );
+    }
     this.choices.delete(request.id);
     return choice.candidate;
   }
